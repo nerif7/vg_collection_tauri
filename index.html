@@ -12,7 +12,7 @@
     <header>
       <h1>🃏 VG Collection — Tauri POC</h1>
       <p class="subtitle">
-        Hybrid cache loader: <code>cards.json</code> dari GitHub + IndexedDB local cache.
+        Virtualized list rendering untuk <code>24k+</code> kartu.
       </p>
     </header>
 
@@ -28,10 +28,16 @@
 
     <div id="stats" class="stats"></div>
 
-    <div id="sampleList"></div>
+    <div class="list-section">
+      <div class="list-header">
+        <h3>Browse Cards</h3>
+        <span id="listMeta" class="list-meta">— kartu</span>
+      </div>
+      <div id="cardListContainer" class="card-list-container"></div>
+    </div>
 
     <div class="note">
-      <strong>Strategy:</strong> Klik "Load Cards" akan cek cache lokal dulu. Kalau ada → instant load (~30ms). Kalau tidak ada → fetch dari GitHub + save ke cache untuk next time. "Force Refresh" bypass cache. "Clear Cache" hapus semua.
+      <strong>Virtualization:</strong> Hanya render rows yang visible di viewport (+ buffer 8). Total 24k+ cards, tapi DOM cuma ~20 elements pada saat scroll. Smooth & efficient.
     </div>
   </div>
 

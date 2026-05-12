@@ -1,13 +1,10 @@
 /**
- * vg_collection_tauri — POC: hybrid cache loader
+ * vg_collection_tauri — POC: virtualized list for 24k+ cards
  *
- * Flow:
- *   App startup → cek IndexedDB cache
- *     ├─ Ada + fresh (<7 hari) → load dari cache, instant
- *     ├─ Ada + stale → load dari cache, BUT check GitHub for update in background
- *     └─ Tidak ada → fetch dari GitHub, save ke cache
- *
- *   Force Refresh button → bypass cache, fetch ulang dari GitHub
+ * Features:
+ *   - Hybrid cache loader (IndexedDB)
+ *   - Virtualized list (render only visible rows)
+ *   - Click row to see card detail in console (preview pane next iteration)
  */
 
 import type { Card, FetchResult } from "./types.ts";
@@ -18,13 +15,16 @@ import {
   formatRelativeTime, isCacheStale,
   type CacheMeta,
 } from "./cache.ts";
+import { VirtualList } from "./virtual-list.ts";
+import { buildCardRow } from "./card-row.ts";
 import "./styles.css";
 
 const DB_URL     = "https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/cards.json";
 const COMMIT_API = "https://api.github.com/repos/nerif7/vanguard-library-db/commits?path=cards.json&per_page=1";
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let cards: Card[] = [];
+let allCards: Card[] = [];
+let virtualList: VirtualList<Card> | null = null;
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
 const loadBtn       = document.querySelector<HTMLButtonElement>("#loadBtn")!;
@@ -32,10 +32,11 @@ const refreshBtn    = document.querySelector<HTMLButtonElement>("#refreshBtn")!;
 const clearBtn      = document.querySelector<HTMLButtonElement>("#clearBtn")!;
 const statusEl      = document.querySelector<HTMLDivElement>("#status")!;
 const statsEl       = document.querySelector<HTMLDivElement>("#stats")!;
-const sampleListEl  = document.querySelector<HTMLDivElement>("#sampleList")!;
 const cacheInfoEl   = document.querySelector<HTMLDivElement>("#cacheInfo")!;
+const listContainer = document.querySelector<HTMLDivElement>("#cardListContainer")!;
+const listMetaEl    = document.querySelector<HTMLDivElement>("#listMeta")!;
 
-// ── Fetch cards from GitHub ───────────────────────────────────────────────────
+// ── Fetch from GitHub ─────────────────────────────────────────────────────────
 
 async function fetchFromGitHub(): Promise<FetchResult> {
   const fetchStart = performance.now();
@@ -59,7 +60,6 @@ async function fetchFromGitHub(): Promise<FetchResult> {
   };
 }
 
-/** Fetch latest commit SHA for cards.json (untuk track update). */
 async function fetchLatestCommitSha(): Promise<string | null> {
   try {
     const res = await fetch(COMMIT_API, {
@@ -73,22 +73,13 @@ async function fetchLatestCommitSha(): Promise<string | null> {
   }
 }
 
-// ── Load from cache ──────────────────────────────────────────────────────────
-
 async function loadFromCache(): Promise<{ cards: Card[]; meta: CacheMeta } | null> {
-  const startTime = performance.now();
   const [cachedCards, meta] = await Promise.all([loadCards(), loadMeta()]);
-
-  if (!cachedCards || cachedCards.length === 0 || !meta) {
-    return null;
-  }
-
-  const loadTime = performance.now() - startTime;
-  console.log(`Loaded ${cachedCards.length} cards from cache in ${loadTime.toFixed(0)} ms`);
+  if (!cachedCards || cachedCards.length === 0 || !meta) return null;
   return { cards: cachedCards, meta };
 }
 
-// ── Render functions ──────────────────────────────────────────────────────────
+// ── Render helpers ────────────────────────────────────────────────────────────
 
 function setStatus(msg: string, kind: "info" | "loading" | "success" | "error" = "info") {
   statusEl.textContent = msg;
@@ -101,6 +92,7 @@ function renderStats(opts: {
   fetchTimeMs?: number;
   parseTimeMs?: number;
   loadFromCacheMs?: number;
+  renderTimeMs?: number;
 }) {
   const mb = (opts.sizeBytes / 1024 / 1024).toFixed(2);
   const cells: string[] = [
@@ -108,33 +100,12 @@ function renderStats(opts: {
     `<div class="stat"><span class="stat-label">Ukuran data</span><span class="stat-value">${mb} MB</span></div>`,
   ];
 
-  if (opts.fetchTimeMs !== undefined) {
-    cells.push(`<div class="stat"><span class="stat-label">Fetch time</span><span class="stat-value">${opts.fetchTimeMs.toFixed(0)} ms</span></div>`);
-  }
-  if (opts.parseTimeMs !== undefined) {
-    cells.push(`<div class="stat"><span class="stat-label">Parse time</span><span class="stat-value">${opts.parseTimeMs.toFixed(0)} ms</span></div>`);
-  }
-  if (opts.loadFromCacheMs !== undefined) {
-    cells.push(`<div class="stat"><span class="stat-label">Load from cache</span><span class="stat-value">${opts.loadFromCacheMs.toFixed(0)} ms ⚡</span></div>`);
-  }
+  if (opts.fetchTimeMs !== undefined)     cells.push(`<div class="stat"><span class="stat-label">Fetch time</span><span class="stat-value">${opts.fetchTimeMs.toFixed(0)} ms</span></div>`);
+  if (opts.parseTimeMs !== undefined)     cells.push(`<div class="stat"><span class="stat-label">Parse time</span><span class="stat-value">${opts.parseTimeMs.toFixed(0)} ms</span></div>`);
+  if (opts.loadFromCacheMs !== undefined) cells.push(`<div class="stat"><span class="stat-label">Load cache</span><span class="stat-value">${opts.loadFromCacheMs.toFixed(0)} ms ⚡</span></div>`);
+  if (opts.renderTimeMs !== undefined)    cells.push(`<div class="stat"><span class="stat-label">Render list</span><span class="stat-value">${opts.renderTimeMs.toFixed(0)} ms 🚀</span></div>`);
 
   statsEl.innerHTML = cells.join("");
-}
-
-function renderSample(cards: Card[]) {
-  const sample = cards.slice(0, 10);
-  sampleListEl.innerHTML = `
-    <h3>Sample 10 kartu pertama</h3>
-    <ul class="sample-list">
-      ${sample.map((card) => `
-        <li class="sample-item">
-          <span class="sample-code">${escapeHtml(card.enCardNo)}</span>
-          <span class="sample-name">${escapeHtml(card.name)}</span>
-          <span class="sample-meta">${card.unitType ?? "—"} · ${card.nations.join("/") || "—"}</span>
-        </li>
-      `).join("")}
-    </ul>
-  `;
 }
 
 function renderCacheInfo(meta: CacheMeta | null) {
@@ -142,78 +113,81 @@ function renderCacheInfo(meta: CacheMeta | null) {
     cacheInfoEl.innerHTML = `<span class="cache-empty">📭 Cache kosong</span>`;
     return;
   }
-
   const stale = isCacheStale(meta);
-  const staleIcon = stale ? "⏰" : "✨";
-  const staleText = stale ? "Stale (>7 hari)" : "Fresh";
-
   cacheInfoEl.innerHTML = `
     <div class="cache-row">
-      <span class="cache-label">${staleIcon} Cache:</span>
+      <span class="cache-label">${stale ? "⏰" : "✨"} Cache:</span>
       <span class="cache-value">${meta.cardCount.toLocaleString("id-ID")} kartu, ${(meta.sizeBytes / 1024 / 1024).toFixed(1)} MB</span>
     </div>
     <div class="cache-row">
       <span class="cache-label">Last fetch:</span>
-      <span class="cache-value">${formatRelativeTime(meta.lastFetchAt)} <span class="cache-status">(${staleText})</span></span>
+      <span class="cache-value">${formatRelativeTime(meta.lastFetchAt)} <span class="cache-status">(${stale ? "Stale" : "Fresh"})</span></span>
     </div>
   `;
 }
 
-function escapeHtml(s: string): string {
-  const div = document.createElement("div");
-  div.textContent = s;
-  return div.innerHTML;
+function renderList(cards: Card[]) {
+  // Create VirtualList instance kalau belum ada
+  if (!virtualList) {
+    virtualList = new VirtualList<Card>(listContainer, {
+      rowHeight: 62,
+      buffer:    8,
+      renderRow: buildCardRow,
+      onRowClick: (card) => {
+        console.log("Clicked card:", card);
+        // Next iteration: show in preview pane
+      },
+      emptyMessage: "Tidak ada kartu untuk ditampilkan",
+    });
+  }
+
+  const renderStart = performance.now();
+  virtualList.setItems(cards);
+  const renderEnd = performance.now();
+  return renderEnd - renderStart;
 }
 
-// ── Main load flow ────────────────────────────────────────────────────────────
+function updateListMeta(count: number) {
+  listMetaEl.textContent = `${count.toLocaleString("id-ID")} kartu (scroll untuk explore)`;
+}
+
+// ── Main load handlers ────────────────────────────────────────────────────────
 
 async function handleLoad() {
-  loadBtn.disabled = true;
-  refreshBtn.disabled = true;
-  clearBtn.disabled = true;
+  setControlsDisabled(true);
   setStatus("Loading...", "loading");
   statsEl.innerHTML = "";
-  sampleListEl.innerHTML = "";
 
   try {
-    // Try cache first
-    const startLoadCache = performance.now();
+    const startLoad = performance.now();
     const cached = await loadFromCache();
-    const loadCacheTime = performance.now() - startLoadCache;
+    const loadTime = performance.now() - startLoad;
 
     if (cached) {
-      // Cache hit! Use it.
-      cards = cached.cards;
+      allCards = cached.cards;
 
-      const stale = isCacheStale(cached.meta);
-      const icon  = stale ? "⏰" : "⚡";
+      const renderTime = renderList(allCards);
+
       setStatus(
-        `${icon} Loaded ${cards.length.toLocaleString("id-ID")} cards from cache in ${loadCacheTime.toFixed(0)} ms`,
+        `⚡ Loaded ${allCards.length.toLocaleString("id-ID")} cards from cache in ${loadTime.toFixed(0)} ms (render ${renderTime.toFixed(0)} ms)`,
         "success",
       );
       renderStats({
-        count: cards.length,
+        count: allCards.length,
         sizeBytes: cached.meta.sizeBytes,
-        loadFromCacheMs: loadCacheTime,
+        loadFromCacheMs: loadTime,
+        renderTimeMs: renderTime,
       });
-      renderSample(cards);
       renderCacheInfo(cached.meta);
-
-      if (stale) {
-        console.log("Cache is stale (>7 days). User can click Force Refresh to update.");
-      }
+      updateListMeta(allCards.length);
     } else {
-      // No cache. Fetch fresh.
       await doFetchAndCache();
     }
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    setStatus(`❌ Failed: ${msg}`, "error");
+    setStatus(`❌ Failed: ${err instanceof Error ? err.message : String(err)}`, "error");
     console.error(err);
   } finally {
-    loadBtn.disabled    = false;
-    refreshBtn.disabled = false;
-    clearBtn.disabled   = false;
+    setControlsDisabled(false);
   }
 }
 
@@ -221,12 +195,9 @@ async function doFetchAndCache() {
   setStatus("Fetching from GitHub...", "loading");
 
   const result = await fetchFromGitHub();
-  cards = result.cards;
-
-  // Get commit SHA for tracking (best-effort)
+  allCards = result.cards;
   const sha = await fetchLatestCommitSha();
 
-  // Save to cache
   setStatus("Saving to cache...", "loading");
   await saveCards(result.cards);
   const meta: CacheMeta = {
@@ -237,8 +208,10 @@ async function doFetchAndCache() {
   };
   await saveMeta(meta);
 
+  const renderTime = renderList(allCards);
+
   setStatus(
-    `✅ Fetched ${result.cards.length.toLocaleString("id-ID")} cards in ${(result.fetchTimeMs + result.parseTimeMs).toFixed(0)} ms (cached for next time)`,
+    `✅ Fetched ${result.cards.length.toLocaleString("id-ID")} cards (${(result.fetchTimeMs + result.parseTimeMs).toFixed(0)} ms) + cached`,
     "success",
   );
   renderStats({
@@ -246,50 +219,45 @@ async function doFetchAndCache() {
     sizeBytes: result.totalBytes,
     fetchTimeMs: result.fetchTimeMs,
     parseTimeMs: result.parseTimeMs,
+    renderTimeMs: renderTime,
   });
-  renderSample(result.cards);
   renderCacheInfo(meta);
+  updateListMeta(allCards.length);
 }
 
-// ── Force refresh ─────────────────────────────────────────────────────────────
-
 async function handleForceRefresh() {
-  loadBtn.disabled = true;
-  refreshBtn.disabled = true;
-  clearBtn.disabled = true;
+  setControlsDisabled(true);
   statsEl.innerHTML = "";
-  sampleListEl.innerHTML = "";
 
   try {
     await doFetchAndCache();
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    setStatus(`❌ Refresh failed: ${msg}`, "error");
+    setStatus(`❌ Refresh failed: ${err instanceof Error ? err.message : String(err)}`, "error");
   } finally {
-    loadBtn.disabled    = false;
-    refreshBtn.disabled = false;
-    clearBtn.disabled   = false;
+    setControlsDisabled(false);
   }
 }
 
-// ── Clear cache ───────────────────────────────────────────────────────────────
-
 async function handleClearCache() {
-  if (!confirm("Hapus semua cache? Klik 'Load' setelah hapus untuk fetch ulang dari GitHub.")) {
-    return;
-  }
+  if (!confirm("Hapus semua cache? Klik 'Load' setelah hapus untuk fetch ulang.")) return;
 
   try {
     await Promise.all([clearCards(), clearMeta()]);
-    cards = [];
-    setStatus("🗑️ Cache cleared. Click 'Load Cards' to fetch fresh.", "info");
+    allCards = [];
+    if (virtualList) virtualList.clear();
+    setStatus("🗑️ Cache cleared. Click 'Load Cards' untuk fetch fresh.", "info");
     statsEl.innerHTML = "";
-    sampleListEl.innerHTML = "";
     renderCacheInfo(null);
+    updateListMeta(0);
   } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    setStatus(`❌ Clear failed: ${msg}`, "error");
+    setStatus(`❌ Clear failed: ${err instanceof Error ? err.message : String(err)}`, "error");
   }
+}
+
+function setControlsDisabled(disabled: boolean) {
+  loadBtn.disabled = disabled;
+  refreshBtn.disabled = disabled;
+  clearBtn.disabled = disabled;
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
@@ -299,15 +267,15 @@ async function init() {
   refreshBtn.addEventListener("click", handleForceRefresh);
   clearBtn.addEventListener("click", handleClearCache);
 
-  // Show current cache state on startup
   const meta = await loadMeta();
   renderCacheInfo(meta);
 
   if (meta) {
-    setStatus(`Cache tersedia (${meta.cardCount.toLocaleString("id-ID")} kartu). Click 'Load' untuk pakai cache, atau 'Force Refresh' untuk fetch ulang.`, "info");
+    setStatus(`Cache tersedia (${meta.cardCount.toLocaleString("id-ID")} kartu). Click 'Load' untuk render list.`, "info");
   } else {
     setStatus("Belum ada cache. Click 'Load Cards' untuk fetch dari GitHub.", "info");
   }
+  updateListMeta(0);
 }
 
 init();
