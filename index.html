@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'self'; img-src 'self' https://en.cf-vanguard.com data:; connect-src 'self' https://raw.githubusercontent.com https://api.github.com; style-src 'self' 'unsafe-inline';">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VG Collection — Tauri POC</title>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>🃏 VG Collection — Tauri POC</h1>
+      <p class="subtitle">
+        Hybrid cache loader: <code>cards.json</code> dari GitHub + IndexedDB local cache.
+      </p>
+    </header>
+
+    <div class="actions">
+      <button id="loadBtn" type="button">Load Cards</button>
+      <button id="refreshBtn" type="button" class="btn-secondary">Force Refresh</button>
+      <button id="clearBtn" type="button" class="btn-danger">Clear Cache</button>
+    </div>
+
+    <div id="status" class="status status-info"></div>
+
+    <div id="cacheInfo" class="cache-info"></div>
+
+    <div id="stats" class="stats"></div>
+
+    <div id="sampleList"></div>
+
+    <div class="note">
+      <strong>Strategy:</strong> Klik "Load Cards" akan cek cache lokal dulu. Kalau ada → instant load (~30ms). Kalau tidak ada → fetch dari GitHub + save ke cache untuk next time. "Force Refresh" bypass cache. "Clear Cache" hapus semua.
+    </div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
