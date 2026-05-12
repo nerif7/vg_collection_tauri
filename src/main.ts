@@ -1,10 +1,12 @@
 /**
- * vg_collection_tauri — POC: virtualized list for 24k+ cards
+ * vg_collection_tauri — POC: search + filter + virtualized list
  *
  * Features:
  *   - Hybrid cache loader (IndexedDB)
- *   - Virtualized list (render only visible rows)
- *   - Click row to see card detail in console (preview pane next iteration)
+ *   - Virtualized list (1ms render untuk 24k cards)
+ *   - Filter bar: search, set, nation, unit type, trigger
+ *   - Debounced search (200ms)
+ *   - Active filter count + Clear button
  */
 
 import type { Card, FetchResult } from "./types.ts";
@@ -17,6 +19,12 @@ import {
 } from "./cache.ts";
 import { VirtualList } from "./virtual-list.ts";
 import { buildCardRow } from "./card-row.ts";
+import { applyFilters, extractUniqueOptions, hasActiveFilter, type FilterState } from "./filters.ts";
+import {
+  getFilterBarRefs, populateDropdowns, readFilterState,
+  resetFilters, attachFilterListeners,
+  type FilterBarRefs,
+} from "./filter-bar.ts";
 import "./styles.css";
 
 const DB_URL     = "https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/cards.json";
@@ -24,9 +32,11 @@ const COMMIT_API = "https://api.github.com/repos/nerif7/vanguard-library-db/comm
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let allCards: Card[] = [];
+let visibleCards: Card[] = [];
 let virtualList: VirtualList<Card> | null = null;
+let filterRefs: FilterBarRefs | null = null;
 
-// ── DOM refs ──────────────────────────────────────────────────────────────────
+// ── DOM refs (non-filter) ─────────────────────────────────────────────────────
 const loadBtn       = document.querySelector<HTMLButtonElement>("#loadBtn")!;
 const refreshBtn    = document.querySelector<HTMLButtonElement>("#refreshBtn")!;
 const clearBtn      = document.querySelector<HTMLButtonElement>("#clearBtn")!;
@@ -35,12 +45,12 @@ const statsEl       = document.querySelector<HTMLDivElement>("#stats")!;
 const cacheInfoEl   = document.querySelector<HTMLDivElement>("#cacheInfo")!;
 const listContainer = document.querySelector<HTMLDivElement>("#cardListContainer")!;
 const listMetaEl    = document.querySelector<HTMLDivElement>("#listMeta")!;
+const filterBarEl   = document.querySelector<HTMLDivElement>("#filterBar")!;
 
 // ── Fetch from GitHub ─────────────────────────────────────────────────────────
 
 async function fetchFromGitHub(): Promise<FetchResult> {
   const fetchStart = performance.now();
-
   const response = await fetch(DB_URL, { cache: "no-cache" });
   if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
 
@@ -53,7 +63,7 @@ async function fetchFromGitHub(): Promise<FetchResult> {
   const parseEnd = performance.now();
 
   return {
-    cards:       parsed,
+    cards: parsed,
     totalBytes,
     fetchTimeMs: fetchEnd - fetchStart,
     parseTimeMs: parseEnd - parseStart,
@@ -126,29 +136,75 @@ function renderCacheInfo(meta: CacheMeta | null) {
   `;
 }
 
-function renderList(cards: Card[]) {
-  // Create VirtualList instance kalau belum ada
-  if (!virtualList) {
-    virtualList = new VirtualList<Card>(listContainer, {
-      rowHeight: 62,
-      buffer:    8,
-      renderRow: buildCardRow,
-      onRowClick: (card) => {
-        console.log("Clicked card:", card);
-        // Next iteration: show in preview pane
-      },
-      emptyMessage: "Tidak ada kartu untuk ditampilkan",
-    });
-  }
-
-  const renderStart = performance.now();
-  virtualList.setItems(cards);
-  const renderEnd = performance.now();
-  return renderEnd - renderStart;
+function setupVirtualList() {
+  if (virtualList) return;
+  virtualList = new VirtualList<Card>(listContainer, {
+    rowHeight: 62,
+    buffer:    8,
+    renderRow: buildCardRow,
+    onRowClick: (card) => {
+      console.log("Clicked card:", card);
+    },
+    emptyMessage: "Tidak ada kartu yang match filter",
+  });
 }
 
-function updateListMeta(count: number) {
-  listMetaEl.textContent = `${count.toLocaleString("id-ID")} kartu (scroll untuk explore)`;
+/** Re-apply filters dan update list. */
+function refreshList() {
+  if (!filterRefs) return;
+
+  const filterStart = performance.now();
+  const filter = readFilterState(filterRefs);
+  visibleCards = applyFilters(allCards, filter);
+  const filterTime = performance.now() - filterStart;
+
+  setupVirtualList();
+  const renderStart = performance.now();
+  virtualList!.setItems(visibleCards);
+  const renderTime = performance.now() - renderStart;
+
+  updateListMeta(visibleCards.length, allCards.length, filterTime + renderTime, filter);
+}
+
+function updateListMeta(
+  visible: number,
+  total: number,
+  durationMs: number,
+  filter: FilterState,
+) {
+  const active = hasActiveFilter(filter);
+  if (active) {
+    listMetaEl.innerHTML = `
+      <strong>${visible.toLocaleString("id-ID")}</strong> dari ${total.toLocaleString("id-ID")} kartu
+      <span class="meta-extra">(filter+render: ${durationMs.toFixed(1)} ms)</span>
+    `;
+  } else {
+    listMetaEl.innerHTML = `
+      <strong>${total.toLocaleString("id-ID")}</strong> kartu
+      <span class="meta-extra">(scroll untuk explore)</span>
+    `;
+  }
+}
+
+// ── Setup filters when cards are loaded ───────────────────────────────────────
+
+function setupFilters() {
+  if (filterRefs) return; // already setup
+
+  filterBarEl.style.display = ""; // show filter bar
+  filterRefs = getFilterBarRefs();
+
+  const options = extractUniqueOptions(allCards);
+  populateDropdowns(filterRefs, options);
+
+  attachFilterListeners(filterRefs, refreshList);
+
+  // Clear button handler
+  filterRefs.clearBtn.addEventListener("click", () => {
+    if (!filterRefs) return;
+    resetFilters(filterRefs);
+    refreshList();
+  });
 }
 
 // ── Main load handlers ────────────────────────────────────────────────────────
@@ -165,11 +221,17 @@ async function handleLoad() {
 
     if (cached) {
       allCards = cached.cards;
+      visibleCards = allCards;
 
-      const renderTime = renderList(allCards);
+      setupFilters();
+      setupVirtualList();
+
+      const renderStart = performance.now();
+      virtualList!.setItems(visibleCards);
+      const renderTime = performance.now() - renderStart;
 
       setStatus(
-        `⚡ Loaded ${allCards.length.toLocaleString("id-ID")} cards from cache in ${loadTime.toFixed(0)} ms (render ${renderTime.toFixed(0)} ms)`,
+        `⚡ Loaded ${allCards.length.toLocaleString("id-ID")} cards from cache in ${loadTime.toFixed(0)} ms`,
         "success",
       );
       renderStats({
@@ -179,7 +241,7 @@ async function handleLoad() {
         renderTimeMs: renderTime,
       });
       renderCacheInfo(cached.meta);
-      updateListMeta(allCards.length);
+      updateListMeta(visibleCards.length, allCards.length, renderTime, readFilterState(filterRefs!));
     } else {
       await doFetchAndCache();
     }
@@ -196,6 +258,7 @@ async function doFetchAndCache() {
 
   const result = await fetchFromGitHub();
   allCards = result.cards;
+  visibleCards = allCards;
   const sha = await fetchLatestCommitSha();
 
   setStatus("Saving to cache...", "loading");
@@ -208,7 +271,12 @@ async function doFetchAndCache() {
   };
   await saveMeta(meta);
 
-  const renderTime = renderList(allCards);
+  setupFilters();
+  setupVirtualList();
+
+  const renderStart = performance.now();
+  virtualList!.setItems(visibleCards);
+  const renderTime = performance.now() - renderStart;
 
   setStatus(
     `✅ Fetched ${result.cards.length.toLocaleString("id-ID")} cards (${(result.fetchTimeMs + result.parseTimeMs).toFixed(0)} ms) + cached`,
@@ -222,7 +290,7 @@ async function doFetchAndCache() {
     renderTimeMs: renderTime,
   });
   renderCacheInfo(meta);
-  updateListMeta(allCards.length);
+  updateListMeta(visibleCards.length, allCards.length, renderTime, readFilterState(filterRefs!));
 }
 
 async function handleForceRefresh() {
@@ -239,16 +307,19 @@ async function handleForceRefresh() {
 }
 
 async function handleClearCache() {
-  if (!confirm("Hapus semua cache? Klik 'Load' setelah hapus untuk fetch ulang.")) return;
+  if (!confirm("Hapus semua cache?")) return;
 
   try {
     await Promise.all([clearCards(), clearMeta()]);
     allCards = [];
+    visibleCards = [];
     if (virtualList) virtualList.clear();
-    setStatus("🗑️ Cache cleared. Click 'Load Cards' untuk fetch fresh.", "info");
+    filterBarEl.style.display = "none";
+    filterRefs = null;
+    setStatus("🗑️ Cache cleared.", "info");
     statsEl.innerHTML = "";
     renderCacheInfo(null);
-    updateListMeta(0);
+    listMetaEl.innerHTML = "— kartu";
   } catch (err) {
     setStatus(`❌ Clear failed: ${err instanceof Error ? err.message : String(err)}`, "error");
   }
@@ -267,15 +338,18 @@ async function init() {
   refreshBtn.addEventListener("click", handleForceRefresh);
   clearBtn.addEventListener("click", handleClearCache);
 
+  // Hide filter bar sebelum cards loaded
+  filterBarEl.style.display = "none";
+
   const meta = await loadMeta();
   renderCacheInfo(meta);
 
   if (meta) {
-    setStatus(`Cache tersedia (${meta.cardCount.toLocaleString("id-ID")} kartu). Click 'Load' untuk render list.`, "info");
+    setStatus(`Cache tersedia (${meta.cardCount.toLocaleString("id-ID")} kartu). Click 'Load' untuk pakai.`, "info");
   } else {
-    setStatus("Belum ada cache. Click 'Load Cards' untuk fetch dari GitHub.", "info");
+    setStatus("Belum ada cache. Click 'Load Cards' untuk fetch.", "info");
   }
-  updateListMeta(0);
+  listMetaEl.innerHTML = "— kartu";
 }
 
 init();

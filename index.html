@@ -12,7 +12,7 @@
     <header>
       <h1>🃏 VG Collection — Tauri POC</h1>
       <p class="subtitle">
-        Virtualized list rendering untuk <code>24k+</code> kartu.
+        Search + filter + virtualized list untuk <code>24k+</code> kartu.
       </p>
     </header>
 
@@ -31,13 +31,38 @@
     <div class="list-section">
       <div class="list-header">
         <h3>Browse Cards</h3>
-        <span id="listMeta" class="list-meta">— kartu</span>
+        <div id="listMeta" class="list-meta">— kartu</div>
       </div>
+
+      <div id="filterBar" class="filter-bar">
+        <input
+          type="search"
+          id="searchInput"
+          placeholder="🔍 Cari nama, kode, race, clan, nation..."
+          autocomplete="off"
+        >
+        <select id="setFilter">
+          <option value="all">Semua set</option>
+        </select>
+        <select id="nationFilter">
+          <option value="all">Semua nation</option>
+        </select>
+        <select id="unitTypeFilter">
+          <option value="all">Semua tipe</option>
+        </select>
+        <select id="triggerFilter">
+          <option value="all">Semua trigger</option>
+        </select>
+        <button id="clearFiltersBtn" type="button" class="btn-clear-filters" title="Reset semua filter">
+          ✕ Clear
+        </button>
+      </div>
+
       <div id="cardListContainer" class="card-list-container"></div>
     </div>
 
     <div class="note">
-      <strong>Virtualization:</strong> Hanya render rows yang visible di viewport (+ buffer 8). Total 24k+ cards, tapi DOM cuma ~20 elements pada saat scroll. Smooth & efficient.
+      <strong>Performance:</strong> Filter di-apply ke 24k cards via <code>Array.filter</code>, lalu virtualized list render hanya rows yang visible. Total response time biasanya &lt;20 ms.
     </div>
   </div>
 

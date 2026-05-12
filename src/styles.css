@@ -72,7 +72,7 @@ h1 {
   border-radius: 3px;
 }
 
-/* ── Action area ───────────────────────────────────────────────── */
+/* ── Buttons ───────────────────────────────────────────────────── */
 .actions {
   display: flex;
   align-items: center;
@@ -179,7 +179,9 @@ button:disabled {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 8px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .list-header h3 {
@@ -189,15 +191,74 @@ button:disabled {
 }
 
 .list-meta {
-  font-size: 0.78rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+.list-meta strong {
+  color: var(--text);
+  font-weight: 600;
+}
+.meta-extra {
   color: var(--text-soft);
+  font-size: 0.76rem;
+  margin-left: 4px;
 }
 
+/* ── Filter bar ────────────────────────────────────────────────── */
+.filter-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.filter-bar input,
+.filter-bar select {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 7px 10px;
+  font-size: 0.82rem;
+  font-family: inherit;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.filter-bar input {
+  flex: 1 1 200px;
+  min-width: 180px;
+}
+
+.filter-bar input:focus,
+.filter-bar select:focus {
+  border-color: var(--accent);
+}
+
+.filter-bar select {
+  cursor: pointer;
+}
+
+.btn-clear-filters {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  font-size: 0.78rem;
+}
+.btn-clear-filters:hover {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
+/* ── Card list container ───────────────────────────────────────── */
 .card-list-container {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: 8px;
-  height: 520px;            /* fixed height — important untuk virtualization */
+  height: 500px;
   overflow-y: auto;
   position: relative;
 }
@@ -276,8 +337,15 @@ button:disabled {
 }
 
 .note strong { color: var(--text); }
+.note code {
+  font-family: var(--font-mono);
+  font-size: 0.9em;
+  background: var(--bg-card);
+  padding: 1px 5px;
+  border-radius: 3px;
+}
 
-/* ── Scrollbar styling (modern look) ───────────────────────────── */
+/* ── Scrollbar ─────────────────────────────────────────────────── */
 .card-list-container::-webkit-scrollbar {
   width: 10px;
 }
