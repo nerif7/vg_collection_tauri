@@ -29,19 +29,25 @@ A **Cardfight!! Vanguard** card database browser and personal collection tracker
 
 ```
 src/
-├── main.ts           # App orchestration, tab routing, global state
-├── cache.ts          # IndexedDB abstraction (card DB cache + collection data)
-├── filters.ts        # Pure filter logic — no DOM, no side effects, testable
-├── filter-bar.ts     # Filter UI wiring only (reads filters.ts, writes DOM)
-├── virtual-list.ts   # Generic virtualized list renderer (RAF-throttled)
-├── card-row.ts       # Card row DOM builder (Browse view)
-├── card-preview.ts   # Preview pane + lightbox
-├── types.ts          # All TypeScript interfaces and types
-└── styles.css        # Light/dark theme styling
+├── main.ts             # App orchestration, tab routing, global state
+├── cache.ts            # IndexedDB abstraction (card DB cache)
+├── collection-db.ts    # IndexedDB CRUD for collection + wishlist stores
+├── filters.ts          # Pure filter logic — no DOM, no side effects, testable
+├── filter-bar.ts       # Filter UI wiring only (reads filters.ts, writes DOM)
+├── virtual-list.ts     # Generic virtualized list renderer (RAF-throttled)
+├── card-row.ts         # Card row DOM builder (Browse view)
+├── collection-row.ts   # Collection row DOM builder
+├── card-preview.ts     # Preview pane + lightbox (shared across tabs)
+├── tab-nav.ts          # Tab navigation wiring
+├── collection-tab.ts   # Collection tab view (stats bar + list + search)
+├── wishlist-tab.ts     # Wishlist tab view
+├── export.ts           # Export logic (JSON, CSV, printable HTML, full backup)
+├── types.ts            # All TypeScript interfaces and types
+└── styles.css          # Light/dark theme styling
 
 src-tauri/src/
-├── lib.rs            # Tauri app builder, plugin registration
-└── main.rs           # Windows entry point (no console window in release)
+├── lib.rs              # Tauri app builder, plugin registration, file I/O commands
+└── main.rs             # Windows entry point (no console window in release)
 ```
 
 ### Key Architectural Decisions
@@ -105,73 +111,122 @@ The primary view is the user's **own collection** — not the card browser. Navi
 | **Wishlist** | Cards the user is looking for / wants to buy |
 | **Browse** | All 24k+ cards — search here to add to Collection or Wishlist |
 
-The Browse tab is the existing Phase 1+2 view, unchanged except the "Add to Collection" button in the preview pane becomes functional.
+**Tab state:** Browse tab preserves scroll position, active filters, and selected card when the user navigates away and returns. Preview pane closes when switching tabs (each tab has its own clean context).
 
-#### Collection tab
-
-**Stats bar at top:**
-- Total unique cards owned
-- Total copies (sum of all quantities)
-- Wishlist card count
-- Location count (distinct non-empty location strings)
-
-**List:** Virtualized, same `VirtualList<T>` used in Browse. Each row shows:
-- Card name + code
-- Quantity badge (e.g. `×3`)
-- Location text
-
-**Click a collection row:** Opens the existing preview pane on the right. Pane shows:
-- Card image + stats (same as Browse preview)
-- Edit section: quantity `[−] N [+]` and location free-text input — changes auto-save
-- `Remove from Collection` danger button
-
-**Filter/search within collection:** Search input that filters by name, code, location. No dropdowns needed (collection is personal/small).
-
-#### Wishlist tab
-
-Same layout as Collection tab. Stats bar shows:
-- Total wishlist entries
-
-Each row: card name + code. No quantity or location (wishlist entries are binary — wanted or not).
-
-Click a wishlist row → preview pane shows card details + `Remove from Wishlist` button.
-
-#### Browse tab
-
-Existing view. Preview pane "Add to Collection" button now opens a small inline form within the pane (quantity + location input) before saving. Separate "Add to Wishlist" link below it.
-
-If the card is already in the collection, the button changes to "Edit in Collection" and clicking switches to the Collection tab with that card selected.
+---
 
 #### Data model
 
 ```typescript
 interface CollectionEntry {
-  cardCode: string;    // primary key — matches Card.enCardNo
-  quantity: number;    // copies owned (always >= 1)
-  location: string;    // free-form: "Red Binder", "Shadow Deck", "Storage Box A"
+  id?: number;       // autoIncrement PK (undefined when creating, assigned by IDB)
+  cardCode: string;  // indexed; matches Card.enCardNo
+  quantity: number;  // always >= 1
+  location: string;  // free-form; empty string = "unspecified"
 }
 
 interface WishlistEntry {
-  cardCode: string;    // primary key
+  cardCode: string;  // primary key
 }
 ```
 
-Wishlist is a separate store from Collection — a card can be in both (e.g. owned 1 copy, still looking for more).
+**Key design decisions:**
+- **Multiple entries per cardCode** — a card can have separate entries for different locations (e.g., 3× "Red Binder" + 2× "Storage Box A" = two separate `CollectionEntry` rows for the same cardCode).
+- **Duplicate guard:** if user adds a card with a `cardCode + location` combination that already exists, quantities are **merged** automatically (no new entry created).
+- **Wishlist is independent** — a card can be in both collection and wishlist simultaneously (e.g., owned 1 copy, still looking for more).
+- **Empty location is valid** — means "unspecified", stored as `""`.
 
-**Location rules:** Free-form text, no validation, no uniqueness constraint. Empty string is valid (means "unspecified").
+**IndexedDB stores:**
+- `collection` store: `keyPath: "id"`, `autoIncrement: true`, indexes on `cardCode` and `location`
+- `wishlist` store: `keyPath: "cardCode"`
+- Neither store is affected by Force Refresh or Clear Cache (card DB cache clears never touch these)
 
-**Storage:** Two separate IndexedDB object stores — `collection` and `wishlist` — both independent of the card cache. Neither is affected by Force Refresh or Clear Cache.
+---
 
-#### Export formats (all required)
+#### Collection tab
 
-| Format | Purpose |
-|---|---|
-| JSON | Re-importable; primary backup format |
-| CSV | Opens in Excel / Google Sheets |
-| Printable HTML | Simple browser-print checklist; usable at card shops |
-| Full backup | Single JSON blob: card cache meta + collection + wishlist |
+**Stats bar at top:**
+- Total unique cards owned (count of distinct cardCodes)
+- Total copies (sum of all quantities across all entries)
+- Wishlist card count
+- Location count (count of distinct non-empty location strings)
 
-Export/import requires Tauri Rust commands for file system access (dialog + write). Add `#[tauri::command]` functions to `lib.rs` as needed.
+**List:** Flat virtualized list using `VirtualList<CollectionEntry>` — one row per entry (not grouped by card). Default sort: **by location A–Z, then card code A–Z**. Each row shows:
+- Card name (resolved from card DB) + card code
+- Quantity badge (e.g. `×3`)
+- Location text (or "—" if empty)
+
+**Click a collection row:** Opens the shared preview pane on the right. Pane shows:
+- Card image + stats (same layout as Browse preview)
+- Edit section: `[−] N [+]` quantity controls + location free-text input (with autocomplete from existing locations)
+- Changes **auto-save** on input change (quantity) or blur (location)
+- `Remove from Collection` danger button — shows confirm dialog before deleting
+
+**Quantity controls behavior:**
+- `[+]` increments qty, auto-saves immediately
+- `[−]` when qty > 1: decrements, auto-saves
+- `[−]` when qty = 1: shows confirm dialog "Remove this entry from collection?" — if confirmed, entry is deleted; if cancelled, nothing changes
+
+**Search within collection:** Single text input, filters across card name (resolved from card DB), card code, and location string. No dropdown filters needed.
+
+---
+
+#### Wishlist tab
+
+Same layout as Collection tab. Stats bar shows total wishlist entry count.
+
+Each row: card name + code. No quantity or location.
+
+Click a wishlist row → preview pane shows card image + stats + `Remove from Wishlist` danger button (no confirm dialog — one-click remove).
+
+---
+
+#### Browse tab
+
+Existing Phase 1+2 view with these additions:
+
+**Preview pane — Add to Collection section (always visible):**
+```
+[ + Add to Collection ]
+  qty: [1]  location: [__________]  (with autocomplete)
+
+Already owned: ×3 Red Binder  ×2 Storage Box A  — Edit →
+```
+- "Add to Collection" form is always visible, not replaced by a different button state
+- Below the form, if the card has existing collection entries: list them as compact chips + "Edit →" link
+- "Edit →" switches to Collection tab, scrolls to and highlights the first matching entry
+- After saving: form resets to defaults (qty=1, location=""), "Already owned" section updates
+- Merge rule: if submitted `cardCode + location` already exists → add qty to existing entry; otherwise create new
+
+**Add to Wishlist:**
+- One-click button/link below the Add to Collection form
+- Immediately adds to wishlist, button label changes to "Remove from Wishlist"
+- Collection and wishlist are independent — adding to collection does NOT auto-remove from wishlist
+
+**Browse row collection indicator:**
+- Rows for cards already in the user's collection show a small badge (e.g. `×5`) on the right, showing total owned quantity across all locations
+
+---
+
+#### Export & Import
+
+All formats are required for Phase 3. Export/import uses Tauri Rust commands (`#[tauri::command]` in `lib.rs`) for native file dialogs and file I/O.
+
+| Format | Columns / Content | Sort |
+|---|---|---|
+| JSON | Raw `CollectionEntry[]` array | as-is |
+| CSV | Code, Quantity, Location | location → card code |
+| Printable HTML | Table: Code \| Name \| Qty \| Location | location → card code |
+| Full backup | `{ collection: CollectionEntry[], wishlist: WishlistEntry[], meta: CacheMeta }` | — |
+
+**Import (JSON backup):**
+- User selects a JSON file via native dialog
+- App asks: **"Merge with current collection"** or **"Replace current collection"**
+  - Merge: entries that share `cardCode + location` → update qty to file's value; entries not in current collection → add
+  - Replace: clear all existing collection entries, then load from file
+- Wishlist is handled separately in full backup imports (same merge/replace choice applies)
+
+**Location autocomplete:** When user types in any location input, show a dropdown of previously used location strings (sourced from all current collection entries). Included in Phase 3.
 
 ### Phase 4 — Distribution
 
@@ -204,11 +259,11 @@ On every app startup:
 
 Also provide a **manual "Force Refresh" button** in the UI for the user to trigger immediately.
 
-### Collection Data
+### Collection & Wishlist Data
 
-- Stored in a separate IndexedDB object store (never mixed with card cache)
-- Keyed by card code string
-- Must not be affected by card DB cache clears
+- Two separate IndexedDB stores: `collection` (autoIncrement id, indexed by cardCode + location) and `wishlist` (keyed by cardCode)
+- Multiple entries per cardCode are allowed — each `cardCode + location` pair is a unique entry
+- Must not be affected by card DB cache clears or Force Refresh
 
 ---
 
