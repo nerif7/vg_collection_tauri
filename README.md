@@ -23,16 +23,23 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Filter: set, nation, unit type, trigger
 - ✅ Card preview pane (klik kartu → detail + gambar)
 - ✅ Lightbox — klik gambar kartu untuk lihat full-size
-- ✅ "Add to Collection" button (siap untuk Phase 3)
 
-**Phase 3 — Collection Tracker (📋 Planned)**
-- 📋 Add card to collection
-- 📋 Locations (binder, deck box, storage)
-- 📋 Quantity tracking
-- 📋 Export: JSON, CSV, printable HTML
-- 📋 Wishlist mode
+**Phase 3 — Collection Tracker (✅ Done)**
+- ✅ Three-tab navigation: **Collection** (default) | **Wishlist** | **Browse**
+- ✅ Add card to collection with qty + free-form location (e.g. "Red Binder")
+- ✅ Multiple entries per card — same card in different locations = separate rows
+- ✅ Merge-on-duplicate — same `cardCode + location` adds qty to existing entry
+- ✅ Collection stats: unique cards, total copies, wishlist count, location count
+- ✅ Quantity controls with auto-save ([−] at 1 → confirm before delete)
+- ✅ Location autocomplete from existing entries
+- ✅ Wishlist — independent from collection, one-click add/remove
+- ✅ Browse row badge — ×N total owned qty across all locations
+- ✅ "Edit →" link in Browse preview jumps to Collection tab entry
+- ✅ Search within collection (name, card code, location)
 
 **Phase 4 — Distribution (📋 Planned)**
+- 📋 Export: JSON, CSV, printable HTML, full backup
+- 📋 Import: JSON backup with merge or replace dialog
 - 📋 Windows installer (.msi)
 - 📋 Android APK build
 
@@ -53,8 +60,8 @@ Speedup cache vs network: **~26× faster**
 
 - **Framework**: [Tauri 2.x](https://tauri.app/)
 - **Frontend**: Vanilla TypeScript + Vite (no component framework)
-- **Storage**: IndexedDB (card cache + collection data)
-- **Backend**: Rust (file I/O untuk Phase 3 export)
+- **Storage**: IndexedDB (card cache + collection + wishlist)
+- **Backend**: Rust (file I/O for Phase 4 export/import)
 - **Data source**: [vanguard-library-db](https://github.com/nerif7/vanguard-library-db) (auto-updated weekly)
 
 ## 🏃 Run Locally
@@ -90,14 +97,19 @@ Output: `src-tauri/target/release/bundle/`
 ```
 vg_collection_tauri/
 ├── src/                    # Frontend TypeScript
-│   ├── main.ts             # App orchestration + hybrid cache loader
-│   ├── cache.ts            # IndexedDB abstraction
-│   ├── types.ts            # Card schema types
-│   ├── filters.ts          # Pure filter logic (no DOM)
+│   ├── main.ts             # App orchestration, tab routing, global state
+│   ├── cache.ts            # IndexedDB abstraction (card DB cache)
+│   ├── collection-db.ts    # IndexedDB CRUD for collection + wishlist stores
+│   ├── types.ts            # All TypeScript interfaces and types
+│   ├── filters.ts          # Pure filter logic (no DOM, no side effects)
 │   ├── filter-bar.ts       # Filter UI wiring
-│   ├── virtual-list.ts     # Generic virtualized list renderer
-│   ├── card-row.ts         # Card row DOM builder
-│   ├── card-preview.ts     # Preview pane + lightbox
+│   ├── virtual-list.ts     # Generic virtualized list renderer (RAF-throttled)
+│   ├── tab-nav.ts          # Tab navigation wiring
+│   ├── card-row.ts         # Card row DOM builder (Browse view)
+│   ├── collection-row.ts   # Collection row DOM builder
+│   ├── card-preview.ts     # Preview pane + lightbox (Browse tab)
+│   ├── collection-tab.ts   # Collection tab view + edit controls
+│   ├── wishlist-tab.ts     # Wishlist tab view
 │   └── styles.css          # Light/dark theme
 ├── src-tauri/              # Rust backend
 │   ├── src/
