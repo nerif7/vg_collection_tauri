@@ -17,7 +17,6 @@
     </header>
 
     <div class="actions">
-      <button id="loadBtn" type="button">Load Cards</button>
       <button id="refreshBtn" type="button" class="btn-secondary">Force Refresh</button>
       <button id="clearBtn" type="button" class="btn-danger">Clear Cache</button>
     </div>
@@ -58,7 +57,16 @@
         </button>
       </div>
 
-      <div id="cardListContainer" class="card-list-container"></div>
+      <div class="browse-layout">
+        <div id="cardListContainer" class="card-list-container"></div>
+        <aside id="previewPane" class="preview-pane">
+          <div class="preview-header">
+            <span class="preview-header-title">Card Details</span>
+            <button id="previewClose" class="btn-preview-close" type="button">✕</button>
+          </div>
+          <div id="previewBody" class="preview-body"></div>
+        </aside>
+      </div>
     </div>
 
     <div class="note">

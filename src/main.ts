@@ -25,6 +25,7 @@ import {
   resetFilters, attachFilterListeners,
   type FilterBarRefs,
 } from "./filter-bar.ts";
+import { CardPreview } from "./card-preview.ts";
 import "./styles.css";
 
 const DB_URL     = "https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/cards.json";
@@ -35,9 +36,10 @@ let allCards: Card[] = [];
 let visibleCards: Card[] = [];
 let virtualList: VirtualList<Card> | null = null;
 let filterRefs: FilterBarRefs | null = null;
+let selectedCardNo: string | null = null;
+let cardPreview: CardPreview | null = null;
 
 // ── DOM refs (non-filter) ─────────────────────────────────────────────────────
-const loadBtn       = document.querySelector<HTMLButtonElement>("#loadBtn")!;
 const refreshBtn    = document.querySelector<HTMLButtonElement>("#refreshBtn")!;
 const clearBtn      = document.querySelector<HTMLButtonElement>("#clearBtn")!;
 const statusEl      = document.querySelector<HTMLDivElement>("#status")!;
@@ -46,6 +48,7 @@ const cacheInfoEl   = document.querySelector<HTMLDivElement>("#cacheInfo")!;
 const listContainer = document.querySelector<HTMLDivElement>("#cardListContainer")!;
 const listMetaEl    = document.querySelector<HTMLDivElement>("#listMeta")!;
 const filterBarEl   = document.querySelector<HTMLDivElement>("#filterBar")!;
+const previewPaneEl = document.querySelector<HTMLElement>("#previewPane")!;
 
 // ── Fetch from GitHub ─────────────────────────────────────────────────────────
 
@@ -141,9 +144,11 @@ function setupVirtualList() {
   virtualList = new VirtualList<Card>(listContainer, {
     rowHeight: 62,
     buffer:    8,
-    renderRow: buildCardRow,
+    renderRow: (card, index) => buildCardRow(card, index, card.enCardNo === selectedCardNo),
     onRowClick: (card) => {
-      console.log("Clicked card:", card);
+      selectedCardNo = card.enCardNo;
+      virtualList!.refresh();
+      cardPreview!.show(card);
     },
     emptyMessage: "Tidak ada kartu yang match filter",
   });
@@ -326,7 +331,6 @@ async function handleClearCache() {
 }
 
 function setControlsDisabled(disabled: boolean) {
-  loadBtn.disabled = disabled;
   refreshBtn.disabled = disabled;
   clearBtn.disabled = disabled;
 }
@@ -334,22 +338,18 @@ function setControlsDisabled(disabled: boolean) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init() {
-  loadBtn.addEventListener("click", handleLoad);
+  cardPreview = new CardPreview(previewPaneEl);
+
   refreshBtn.addEventListener("click", handleForceRefresh);
   clearBtn.addEventListener("click", handleClearCache);
 
-  // Hide filter bar sebelum cards loaded
   filterBarEl.style.display = "none";
 
   const meta = await loadMeta();
   renderCacheInfo(meta);
-
-  if (meta) {
-    setStatus(`Cache tersedia (${meta.cardCount.toLocaleString("id-ID")} kartu). Click 'Load' untuk pakai.`, "info");
-  } else {
-    setStatus("Belum ada cache. Click 'Load Cards' untuk fetch.", "info");
-  }
   listMetaEl.innerHTML = "— kartu";
+
+  await handleLoad();
 }
 
 init();

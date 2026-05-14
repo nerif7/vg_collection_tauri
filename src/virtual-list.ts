@@ -96,6 +96,11 @@ export class VirtualList<T> {
     this.container.scrollTop = targetTop;
   }
 
+  /** Re-render visible rows tanpa reset scroll (gunakan setelah selection berubah). */
+  refresh(): void {
+    this.renderVisible();
+  }
+
   /** Cleanup — call saat component di-destroy. */
   destroy(): void {
     this.container.removeEventListener("scroll", this.scrollHandler);

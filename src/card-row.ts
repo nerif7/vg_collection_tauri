@@ -4,9 +4,9 @@
 
 import type { Card } from "./types.ts";
 
-export function buildCardRow(card: Card): HTMLElement {
+export function buildCardRow(card: Card, _index: number, selected = false): HTMLElement {
   const row = document.createElement("div");
-  row.className = "card-row";
+  row.className = selected ? "card-row card-row--selected" : "card-row";
 
   // Column 1: cardCode (monospace, blue)
   const codeEl = document.createElement("div");
