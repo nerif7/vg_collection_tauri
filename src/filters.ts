@@ -126,3 +126,32 @@ export const TRIGGER_OPTIONS: Exclude<TriggerType, null>[] = [
   "Over",
   "Sentinel",
 ];
+
+export type BrowseSortKey = "name" | "grade-asc" | "grade-desc" | "owned-desc";
+
+export function sortCards(
+  cards: Card[],
+  key: BrowseSortKey,
+  qtyMap?: Map<string, number>,
+): Card[] {
+  const arr = [...cards];
+  switch (key) {
+    case "name":
+      arr.sort((a, b) => a.name.localeCompare(b.name));
+      break;
+    case "grade-asc":
+      arr.sort((a, b) => (a.grade ?? 99) - (b.grade ?? 99) || a.name.localeCompare(b.name));
+      break;
+    case "grade-desc":
+      arr.sort((a, b) => (b.grade ?? -1) - (a.grade ?? -1) || a.name.localeCompare(b.name));
+      break;
+    case "owned-desc":
+      arr.sort((a, b) => {
+        const qa = qtyMap?.get(a.enCardNo) ?? 0;
+        const qb = qtyMap?.get(b.enCardNo) ?? 0;
+        return qb - qa || a.name.localeCompare(b.name);
+      });
+      break;
+  }
+  return arr;
+}

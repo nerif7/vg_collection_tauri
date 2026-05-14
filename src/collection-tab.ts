@@ -2,22 +2,30 @@ import type { Card, CollectionEntry } from "./types.ts";
 import {
   getAllCollectionEntries,
   updateCollectionEntry, removeCollectionEntry,
-  getAllWishlistEntries, getAllLocations,
+  getAllWishlistEntries, getAllLocations, movePartial,
 } from "./collection-db.ts";
 import { VirtualList } from "./virtual-list.ts";
+import { VirtualGrid } from "./virtual-grid.ts";
 import { buildCollectionRow } from "./collection-row.ts";
+import { buildCardTile } from "./card-tile.ts";
+import { renderGroupedView } from "./collection-grouped.ts";
 import { showConfirm } from "./confirm-dialog.ts";
 import { openLocationManager } from "./location-manager.ts";
 
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+type CollectionSortKey = "loc-code" | "name" | "qty-desc" | "id-desc";
+type CollectionViewMode = "list" | "grid" | "grouped";
+
 // ── DOM refs ───────────────────────────────────────────────────────────────────
 
-const statsEl      = document.getElementById("collectionStats")!;
-const searchEl     = document.getElementById("collectionSearch") as HTMLInputElement;
-const listMetaEl   = document.getElementById("collectionListMeta")!;
+const statsEl       = document.getElementById("collectionStats")!;
+const searchEl      = document.getElementById("collectionSearch") as HTMLInputElement;
+const listMetaEl    = document.getElementById("collectionListMeta")!;
 const listContainer = document.getElementById("collectionListContainer")!;
-const previewPane  = document.getElementById("collectionPreviewPane")!;
-const previewBody  = document.getElementById("collectionPreviewBody")!;
-const previewClose = document.getElementById("collectionPreviewClose")!;
+const previewPane   = document.getElementById("collectionPreviewPane")!;
+const previewBody   = document.getElementById("collectionPreviewBody")!;
+const previewClose  = document.getElementById("collectionPreviewClose")!;
 
 // ── State ──────────────────────────────────────────────────────────────────────
 
@@ -27,11 +35,29 @@ let cardMap = new Map<string, Card>();
 let selectedId: number | null = null;
 let wishlistCount = 0;
 let virtualList: VirtualList<CollectionEntry> | null = null;
+let virtualGrid: VirtualGrid<CollectionEntry> | null = null;
+let viewMode: CollectionViewMode = "list";
+let collapsedGroups = new Set<string>();
+
+// Filter/sort refs — wired in initCollectionTab
+let sortEl:         HTMLSelectElement;
+let locFilterEl:    HTMLSelectElement;
+let nationFilterEl: HTMLSelectElement;
+let typeFilterEl:   HTMLSelectElement;
+let viewToggleBtn:  HTMLButtonElement;
+let groupToggleBtn: HTMLButtonElement;
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 
 export function initCollectionTab(cards: Card[]): void {
   cardMap = new Map(cards.map((c) => [c.enCardNo, c]));
+
+  sortEl         = document.getElementById("collectionSort")       as HTMLSelectElement;
+  locFilterEl    = document.getElementById("collectionLocFilter")   as HTMLSelectElement;
+  nationFilterEl = document.getElementById("collectionNationFilter") as HTMLSelectElement;
+  typeFilterEl   = document.getElementById("collectionTypeFilter")  as HTMLSelectElement;
+  viewToggleBtn  = document.getElementById("collectionViewToggle")  as HTMLButtonElement;
+  groupToggleBtn = document.getElementById("collectionGroupToggle") as HTMLButtonElement;
 
   previewClose.addEventListener("click", closePreview);
 
@@ -44,11 +70,38 @@ export function initCollectionTab(cards: Card[]): void {
     });
   });
 
-  searchEl.addEventListener("input", () => {
-    applySearch();
+  searchEl.addEventListener("input",       applyFilters);
+  sortEl.addEventListener("change",        applyFilters);
+  locFilterEl.addEventListener("change",   applyFilters);
+  nationFilterEl.addEventListener("change", applyFilters);
+  typeFilterEl.addEventListener("change",  applyFilters);
+
+  viewToggleBtn.addEventListener("click", () => {
+    setViewMode(viewMode === "grid" ? "list" : "grid");
+    applyFilters();
   });
 
-  if (!virtualList) {
+  groupToggleBtn.addEventListener("click", () => {
+    setViewMode(viewMode === "grouped" ? "list" : "grouped");
+    applyFilters();
+  });
+
+  setViewMode("list");
+}
+
+// ── View mode ──────────────────────────────────────────────────────────────────
+
+function setViewMode(mode: CollectionViewMode): void {
+  viewMode = mode;
+  virtualList?.destroy(); virtualList = null;
+  virtualGrid?.destroy(); virtualGrid = null;
+  listContainer.innerHTML = "";
+
+  viewToggleBtn.textContent  = mode === "grid" ? "☰ List" : "⊞ Grid";
+  groupToggleBtn.textContent = mode === "grouped" ? "☰ Flat" : "≡ Grouped";
+  groupToggleBtn.style.display = mode === "grid" ? "none" : "";
+
+  if (mode === "list") {
     virtualList = new VirtualList<CollectionEntry>(listContainer, {
       rowHeight: 62,
       buffer: 8,
@@ -57,6 +110,23 @@ export function initCollectionTab(cards: Card[]): void {
       onRowClick: (entry) => {
         selectedId = entry.id ?? null;
         virtualList!.refresh();
+        openPreview(entry);
+      },
+      emptyMessage: "No cards in collection yet — add from Browse tab",
+    });
+  } else if (mode === "grid") {
+    virtualGrid = new VirtualGrid<CollectionEntry>(listContainer, {
+      cellHeight: 220,
+      gap: 10,
+      buffer: 3,
+      renderCell: (entry) =>
+        buildCardTile(cardMap.get(entry.cardCode), entry.id === selectedId, {
+          badgeQty: entry.quantity,
+          extraInfo: entry.location || "—",
+        }),
+      onCellClick: (entry) => {
+        selectedId = entry.id ?? null;
+        virtualGrid!.refresh();
         openPreview(entry);
       },
       emptyMessage: "No cards in collection yet — add from Browse tab",
@@ -71,26 +141,86 @@ export async function loadCollectionTab(): Promise<void> {
     getAllCollectionEntries(),
     getAllWishlistEntries(),
   ]);
-  wishlistCount = wishlist.length;
-  allEntries = sortEntries(entries);
-  applySearch();
+  wishlistCount  = wishlist.length;
+  allEntries     = entries;
+  populateCollectionFilters();
+  applyFilters();
   renderStats();
 }
 
-function sortEntries(entries: CollectionEntry[]): CollectionEntry[] {
-  return [...entries].sort((a, b) => {
-    const loc = a.location.localeCompare(b.location);
-    if (loc !== 0) return loc;
-    return a.cardCode.localeCompare(b.cardCode);
-  });
+function populateCollectionFilters(): void {
+  const nations = new Set<string>();
+  const types   = new Set<string>();
+  const locs    = new Set<string>();
+
+  for (const e of allEntries) {
+    if (e.location) locs.add(e.location);
+    const card = cardMap.get(e.cardCode);
+    if (card) {
+      for (const n of card.nations) nations.add(n);
+      if (card.unitType) types.add(card.unitType);
+    }
+  }
+
+  const curLoc    = locFilterEl?.value;
+  const curNation = nationFilterEl?.value;
+  const curType   = typeFilterEl?.value;
+
+  const fill = (el: HTMLSelectElement, items: string[], label: string) => {
+    el.innerHTML = `<option value="all">${label}</option>`;
+    for (const v of [...items].sort()) {
+      const opt = document.createElement("option");
+      opt.value = v; opt.textContent = v;
+      el.appendChild(opt);
+    }
+  };
+
+  fill(locFilterEl,    [...locs],    "All locations");
+  fill(nationFilterEl, [...nations], "All nations");
+  fill(typeFilterEl,   [...types],   "All types");
+
+  if (curLoc)    locFilterEl.value    = curLoc;
+  if (curNation) nationFilterEl.value = curNation;
+  if (curType)   typeFilterEl.value   = curType;
 }
 
-function applySearch(): void {
-  const q = searchEl.value.trim().toLowerCase();
-  if (!q) {
-    visibleEntries = allEntries;
-  } else {
-    visibleEntries = allEntries.filter((e) => {
+function sortEntries(entries: CollectionEntry[], key: CollectionSortKey): CollectionEntry[] {
+  const arr = [...entries];
+  switch (key) {
+    case "loc-code":
+      arr.sort((a, b) => {
+        const l = a.location.localeCompare(b.location);
+        return l !== 0 ? l : a.cardCode.localeCompare(b.cardCode);
+      });
+      break;
+    case "name":
+      arr.sort((a, b) => {
+        const na = cardMap.get(a.cardCode)?.name ?? a.cardCode;
+        const nb = cardMap.get(b.cardCode)?.name ?? b.cardCode;
+        return na.localeCompare(nb);
+      });
+      break;
+    case "qty-desc":
+      arr.sort((a, b) => b.quantity - a.quantity || a.cardCode.localeCompare(b.cardCode));
+      break;
+    case "id-desc":
+      arr.sort((a, b) => (b.id ?? 0) - (a.id ?? 0));
+      break;
+  }
+  return arr;
+}
+
+function applyFilters(): void {
+  const q      = searchEl?.value.trim().toLowerCase() ?? "";
+  const loc    = locFilterEl?.value    ?? "all";
+  const nation = nationFilterEl?.value ?? "all";
+  const type   = typeFilterEl?.value   ?? "all";
+  const key    = (sortEl?.value ?? "loc-code") as CollectionSortKey;
+
+  let filtered = allEntries;
+
+  if (q) {
+    filtered = filtered.filter((e) => {
       const card = cardMap.get(e.cardCode);
       return (
         e.cardCode.toLowerCase().includes(q) ||
@@ -99,11 +229,37 @@ function applySearch(): void {
       );
     });
   }
+  if (loc    !== "all") filtered = filtered.filter((e) => e.location === loc);
+  if (nation !== "all") filtered = filtered.filter((e) => cardMap.get(e.cardCode)?.nations.includes(nation) ?? false);
+  if (type   !== "all") filtered = filtered.filter((e) => cardMap.get(e.cardCode)?.unitType === type);
 
-  virtualList?.setItems(visibleEntries);
-  listMetaEl.textContent = q
+  visibleEntries = viewMode !== "grouped" ? sortEntries(filtered, key) : filtered;
+
+  updateView();
+
+  const hasFilter = q || loc !== "all" || nation !== "all" || type !== "all";
+  listMetaEl.textContent = hasFilter
     ? `${visibleEntries.length} of ${allEntries.length} entries`
     : `${allEntries.length} entries`;
+}
+
+function updateView(): void {
+  if (viewMode === "list") {
+    virtualList?.setItems(visibleEntries);
+  } else if (viewMode === "grid") {
+    virtualGrid?.setItems(visibleEntries);
+  } else {
+    renderGroupedView(
+      listContainer, visibleEntries, cardMap, collapsedGroups,
+      (loc) => {
+        if (collapsedGroups.has(loc)) collapsedGroups.delete(loc);
+        else collapsedGroups.add(loc);
+        updateView();
+      },
+      (entry) => { selectedId = entry.id ?? null; openPreview(entry); },
+      selectedId,
+    );
+  }
 }
 
 function renderStats(): void {
@@ -129,6 +285,8 @@ function closePreview(): void {
   previewPane.classList.remove("is-open");
   selectedId = null;
   virtualList?.refresh();
+  virtualGrid?.refresh();
+  if (viewMode === "grouped") updateView();
 }
 
 export function closeCollectionPreview(): void {
@@ -142,24 +300,22 @@ async function openPreview(entry: CollectionEntry): Promise<void> {
 
 async function renderPreview(entry: CollectionEntry): Promise<void> {
   const card = cardMap.get(entry.cardCode);
-  const locations = await getAllLocations();
+  const managerLocs = await getAllLocations();
+  const entryLocs   = [...new Set(allEntries.map((e) => e.location).filter((l) => l !== ""))];
+  const locations   = [...new Set([...managerLocs, ...entryLocs])].sort();
 
   previewBody.innerHTML = "";
 
-  // Image
   if (card?.imageUrlEn) {
     const wrap = document.createElement("div");
     wrap.className = "preview-image-wrap";
     const img = document.createElement("img");
-    img.src = card.imageUrlEn;
-    img.alt = card.name;
-    img.className = "preview-image";
-    img.loading = "lazy";
+    img.src = card.imageUrlEn; img.alt = card.name;
+    img.className = "preview-image"; img.loading = "lazy";
     wrap.appendChild(img);
     previewBody.appendChild(wrap);
   }
 
-  // Name + code
   const info = document.createElement("div");
   info.className = "preview-info";
   const nameEl = document.createElement("div");
@@ -171,36 +327,26 @@ async function renderPreview(entry: CollectionEntry): Promise<void> {
   info.append(nameEl, codeEl);
   previewBody.appendChild(info);
 
-  // Edit section
-  const editSection = buildEditSection(entry, locations);
-  previewBody.appendChild(editSection);
+  previewBody.appendChild(buildEditSection(entry, locations));
 }
+
+// ── Edit section ───────────────────────────────────────────────────────────────
 
 function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElement {
   const section = document.createElement("div");
   section.className = "collection-edit-section";
 
   // Quantity row
-  const qtyRow = document.createElement("div");
+  const qtyRow   = document.createElement("div");
   qtyRow.className = "collection-qty-row";
-
   const qtyLabel = document.createElement("span");
-  qtyLabel.className = "collection-edit-label";
-  qtyLabel.textContent = "Quantity";
-
+  qtyLabel.className = "collection-edit-label"; qtyLabel.textContent = "Quantity";
   const minusBtn = document.createElement("button");
-  minusBtn.className = "qty-btn";
-  minusBtn.textContent = "−";
-  minusBtn.type = "button";
-
+  minusBtn.className = "qty-btn"; minusBtn.textContent = "−"; minusBtn.type = "button";
   const qtyDisplay = document.createElement("span");
-  qtyDisplay.className = "qty-display";
-  qtyDisplay.textContent = String(entry.quantity);
-
+  qtyDisplay.className = "qty-display"; qtyDisplay.textContent = String(entry.quantity);
   const plusBtn = document.createElement("button");
-  plusBtn.className = "qty-btn";
-  plusBtn.textContent = "+";
-  plusBtn.type = "button";
+  plusBtn.className = "qty-btn"; plusBtn.textContent = "+"; plusBtn.type = "button";
 
   let currentQty = entry.quantity;
 
@@ -218,9 +364,7 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
       if (!await showConfirm("Remove this entry from collection?")) return;
       await removeCollectionEntry(entry.id!);
       allEntries = allEntries.filter((e) => e.id !== entry.id);
-      applySearch();
-      renderStats();
-      closePreview();
+      applyFilters(); renderStats(); closePreview();
       return;
     }
     currentQty--;
@@ -233,57 +377,81 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
 
   qtyRow.append(qtyLabel, minusBtn, qtyDisplay, plusBtn);
 
-  // Location select (move to a different existing location)
-  const locationRow = document.createElement("div");
-  locationRow.className = "collection-location-row";
+  // Move copies section
+  const moveSection = document.createElement("div");
+  moveSection.className = "collection-move-section";
+  const moveLabel = document.createElement("div");
+  moveLabel.className = "collection-edit-label"; moveLabel.textContent = "Move copies";
 
-  const locLabel = document.createElement("label");
-  locLabel.className = "collection-edit-label";
-  locLabel.textContent = "Location";
+  const otherLocations = locations.filter((l) => l !== entry.location);
 
-  const locSelect = document.createElement("select");
-  locSelect.className = "collection-location-select";
-  for (const loc of locations) {
-    const opt = document.createElement("option");
-    opt.value = loc;
-    opt.textContent = loc;
-    if (loc === entry.location) opt.selected = true;
-    locSelect.appendChild(opt);
+  if (otherLocations.length === 0) {
+    const noLoc = document.createElement("p");
+    noLoc.className = "collection-move-empty";
+    noLoc.textContent = "No other locations — add one via the Locations button.";
+    moveSection.append(moveLabel, noLoc);
+  } else {
+    const moveRow = document.createElement("div");
+    moveRow.className = "collection-move-row";
+
+    const moveQtyInput = document.createElement("input");
+    moveQtyInput.type = "number"; moveQtyInput.min = "1";
+    moveQtyInput.max = String(currentQty); moveQtyInput.value = "1";
+    moveQtyInput.className = "collection-move-qty";
+
+    const moveToLabel = document.createElement("span");
+    moveToLabel.className = "collection-move-to-label"; moveToLabel.textContent = "to";
+
+    const moveLocSelect = document.createElement("select");
+    moveLocSelect.className = "collection-location-select";
+    for (const loc of otherLocations) {
+      const opt = document.createElement("option");
+      opt.value = loc; opt.textContent = loc;
+      moveLocSelect.appendChild(opt);
+    }
+
+    const moveBtn = document.createElement("button");
+    moveBtn.type = "button"; moveBtn.className = "btn-secondary btn-sm";
+    moveBtn.textContent = "Move →";
+
+    moveBtn.addEventListener("click", async () => {
+      const qty        = Math.min(Math.max(1, parseInt(moveQtyInput.value, 10) || 1), currentQty);
+      const toLocation = moveLocSelect.value;
+      const isFullMove = qty >= currentQty;
+      await movePartial({ ...entry, quantity: currentQty }, toLocation, qty);
+      await loadCollectionTab();
+      if (isFullMove) {
+        closePreview();
+      } else {
+        const updated = allEntries.find((e) => e.id === entry.id);
+        if (updated) { selectedId = updated.id ?? null; virtualList?.refresh(); virtualGrid?.refresh(); await openPreview(updated); }
+        else closePreview();
+      }
+    });
+
+    moveRow.append(moveQtyInput, moveToLabel, moveLocSelect, moveBtn);
+    moveSection.append(moveLabel, moveRow);
   }
-
-  locSelect.addEventListener("change", async () => {
-    const newLoc = locSelect.value;
-    if (newLoc === entry.location) return;
-    await updateCollectionEntry({ ...entry, location: newLoc });
-    entry.location = newLoc;
-    allEntries = sortEntries(allEntries.map((e) => e.id === entry.id ? entry : e));
-    applySearch();
-  });
-
-  locationRow.append(locLabel, locSelect);
 
   // Remove button
   const removeBtn = document.createElement("button");
   removeBtn.className = "btn-danger btn-remove-collection";
-  removeBtn.textContent = "Remove from Collection";
-  removeBtn.type = "button";
+  removeBtn.textContent = "Remove from Collection"; removeBtn.type = "button";
   removeBtn.addEventListener("click", async () => {
     if (!await showConfirm("Remove this entry from collection?")) return;
     await removeCollectionEntry(entry.id!);
     allEntries = allEntries.filter((e) => e.id !== entry.id);
-    applySearch();
-    renderStats();
-    closePreview();
+    applyFilters(); renderStats(); closePreview();
   });
 
-  section.append(qtyRow, locationRow, removeBtn);
+  section.append(qtyRow, moveSection, removeBtn);
   return section;
 }
 
 function syncEntryInList(updated: CollectionEntry): void {
   const idx = allEntries.findIndex((e) => e.id === updated.id);
   if (idx !== -1) allEntries[idx] = { ...updated };
-  applySearch();
+  applyFilters();
 }
 
 // ── Public: scroll to entry (called from Browse "Edit →") ─────────────────────
@@ -292,8 +460,22 @@ export function scrollToEntry(id: number): void {
   const idx = visibleEntries.findIndex((e) => e.id === id);
   if (idx === -1) return;
   selectedId = id;
-  virtualList?.scrollToIndex(idx);
-  virtualList?.refresh();
+
+  if (viewMode === "list") {
+    virtualList?.scrollToIndex(idx);
+    virtualList?.refresh();
+  } else if (viewMode === "grid") {
+    virtualGrid?.scrollToIndex(idx);
+    virtualGrid?.refresh();
+  } else {
+    const entry = visibleEntries[idx];
+    if (entry) {
+      const loc = entry.location || "—";
+      collapsedGroups.delete(loc);
+      updateView();
+    }
+  }
+
   const entry = visibleEntries[idx];
   if (entry) openPreview(entry);
 }

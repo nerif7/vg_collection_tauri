@@ -31,6 +31,7 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Merge-on-duplicate — same `cardCode + location` adds qty to existing entry
 - ✅ Collection stats: unique cards, total copies, wishlist count, location count
 - ✅ Quantity controls with auto-save ([−] at 1 → confirm before delete)
+- ✅ Partial move — move N copies from one location to another (e.g. 3 of 5 to "Box B")
 - ✅ Location autocomplete from existing entries
 - ✅ Wishlist — independent from collection, one-click add/remove
 - ✅ Browse row badge — ×N total owned qty across all locations
@@ -38,8 +39,11 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Search within collection (name, card code, location)
 - ✅ Location management — locations stored separately; default "my collection" seeded on first run
 - ✅ Manage Locations modal — add new locations from Collection toolbar
-- ✅ Move location — change entry location via select dropdown (only existing locations)
 - ✅ Centered custom confirm dialog (replaces native browser popup)
+- ✅ Sort options — Collection: location/name/qty/date; Browse: name/grade↑/grade↓/owned; Wishlist: name/nation
+- ✅ Filter dropdowns — Collection: location/nation/type; Wishlist: nation/type
+- ✅ Grid view toggle — all three tabs support list ↔ grid (virtualized, ~160px tiles, ×N badge)
+- ✅ Grouped view — Collection tab can toggle flat list ↔ collapsible location groups (in-group sort: grade → name)
 
 **Phase 4 — Distribution (📋 Planned)**
 - 📋 Export: JSON, CSV, printable HTML, full backup
@@ -108,9 +112,12 @@ vg_collection_tauri/
 │   ├── filters.ts          # Pure filter logic (no DOM, no side effects)
 │   ├── filter-bar.ts       # Filter UI wiring
 │   ├── virtual-list.ts     # Generic virtualized list renderer (RAF-throttled)
+│   ├── virtual-grid.ts     # Generic virtualized grid renderer (ResizeObserver, dynamic cols)
 │   ├── tab-nav.ts          # Tab navigation wiring
 │   ├── card-row.ts         # Card row DOM builder (Browse view)
+│   ├── card-tile.ts        # Card tile DOM builder (grid view, all tabs)
 │   ├── collection-row.ts   # Collection row DOM builder
+│   ├── collection-grouped.ts # Grouped view renderer (collapsible location groups)
 │   ├── card-preview.ts     # Preview pane + lightbox (Browse tab)
 │   ├── collection-tab.ts   # Collection tab view + edit controls
 │   ├── wishlist-tab.ts     # Wishlist tab view

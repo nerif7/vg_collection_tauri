@@ -24,12 +24,33 @@
       <div id="collectionStats" class="collection-stats"></div>
 
       <div class="collection-toolbar">
-        <input type="search" id="collectionSearch"
-               placeholder="Search name, code, location…" autocomplete="off">
-        <div class="collection-toolbar-actions">
-          <button id="manageLocationsBtn" type="button" class="btn-secondary btn-sm">Locations</button>
-          <button id="exportBtn" type="button" class="btn-secondary btn-sm">Export</button>
-          <button id="importBtn" type="button" class="btn-secondary btn-sm">Import</button>
+        <div class="toolbar-row">
+          <input type="search" id="collectionSearch"
+                 placeholder="Search name, code, location…" autocomplete="off">
+          <div class="collection-toolbar-actions">
+            <button id="manageLocationsBtn" type="button" class="btn-secondary btn-sm">Locations</button>
+            <button id="collectionViewToggle" type="button" class="btn-secondary btn-sm">⊞ Grid</button>
+            <button id="exportBtn" type="button" class="btn-secondary btn-sm">Export</button>
+            <button id="importBtn" type="button" class="btn-secondary btn-sm">Import</button>
+          </div>
+        </div>
+        <div class="toolbar-row toolbar-filters">
+          <select id="collectionSort" class="filter-select">
+            <option value="loc-code">Location A–Z</option>
+            <option value="name">Name A–Z</option>
+            <option value="qty-desc">Qty (most first)</option>
+            <option value="id-desc">Date added (newest)</option>
+          </select>
+          <select id="collectionLocFilter" class="filter-select">
+            <option value="all">All locations</option>
+          </select>
+          <select id="collectionNationFilter" class="filter-select">
+            <option value="all">All nations</option>
+          </select>
+          <select id="collectionTypeFilter" class="filter-select">
+            <option value="all">All types</option>
+          </select>
+          <button id="collectionGroupToggle" type="button" class="btn-secondary btn-sm">≡ Grouped</button>
         </div>
       </div>
 
@@ -50,6 +71,26 @@
     <!-- ── Wishlist tab ─────────────────────────────────────────────── -->
     <div id="tabWishlist" class="tab-panel tab-panel--hidden">
       <div id="wishlistStats" class="collection-stats"></div>
+
+      <div class="collection-toolbar">
+        <div class="toolbar-row">
+          <input type="search" id="wishlistSearch"
+                 placeholder="Search name, code…" autocomplete="off">
+          <button id="wishlistViewToggle" type="button" class="btn-secondary btn-sm">⊞ Grid</button>
+        </div>
+        <div class="toolbar-row toolbar-filters">
+          <select id="wishlistSort" class="filter-select">
+            <option value="name">Name A–Z</option>
+            <option value="nation">Nation A–Z</option>
+          </select>
+          <select id="wishlistNationFilter" class="filter-select">
+            <option value="all">All nations</option>
+          </select>
+          <select id="wishlistTypeFilter" class="filter-select">
+            <option value="all">All types</option>
+          </select>
+        </div>
+      </div>
 
       <div class="browse-layout">
         <div id="wishlistListContainer" class="card-list-container"></div>
@@ -87,6 +128,13 @@
           <select id="nationFilter"><option value="all">All nations</option></select>
           <select id="unitTypeFilter"><option value="all">All types</option></select>
           <select id="triggerFilter"><option value="all">All triggers</option></select>
+          <select id="browseSort" class="filter-select">
+            <option value="name">Name A–Z</option>
+            <option value="grade-asc">Grade 0→4</option>
+            <option value="grade-desc">Grade 4→0</option>
+            <option value="owned-desc">Owned (most)</option>
+          </select>
+          <button id="browseViewToggle" type="button" class="btn-secondary btn-sm">⊞ Grid</button>
           <button id="clearFiltersBtn" type="button" class="btn-clear-filters">✕ Clear</button>
         </div>
 

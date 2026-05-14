@@ -71,6 +71,17 @@ export function mergeOrAdd(cardCode: string, location: string, qty: number): Pro
   });
 }
 
+/** Move qty copies from entry to toLocation. If qty >= entry.quantity, moves everything. */
+export async function movePartial(entry: CollectionEntry, toLocation: string, qty: number): Promise<void> {
+  const clampedQty = Math.min(qty, entry.quantity);
+  if (clampedQty >= entry.quantity) {
+    await updateCollectionEntry({ ...entry, location: toLocation });
+  } else {
+    await updateCollectionEntry({ ...entry, quantity: entry.quantity - clampedQty });
+    await mergeOrAdd(entry.cardCode, toLocation, clampedQty);
+  }
+}
+
 /** Returns Map<cardCode, totalQty> across all entries — used for Browse row badges. */
 export async function getCollectionQtyMap(): Promise<Map<string, number>> {
   const entries = await getAllCollectionEntries();

@@ -9,13 +9,15 @@ import {
 import { getCollectionQtyMap } from "./collection-db.ts";
 import { VirtualList } from "./virtual-list.ts";
 import { buildCardRow } from "./card-row.ts";
-import { applyFilters, extractUniqueOptions, hasActiveFilter, type FilterState } from "./filters.ts";
+import { applyFilters, extractUniqueOptions, hasActiveFilter, sortCards, type FilterState, type BrowseSortKey } from "./filters.ts";
 import {
   getFilterBarRefs, populateDropdowns, readFilterState,
   resetFilters, attachFilterListeners,
   type FilterBarRefs,
 } from "./filter-bar.ts";
 import { CardPreview } from "./card-preview.ts";
+import { VirtualGrid } from "./virtual-grid.ts";
+import { buildCardTile } from "./card-tile.ts";
 import { TabNav } from "./tab-nav.ts";
 import {
   initCollectionTab, loadCollectionTab,
@@ -34,6 +36,9 @@ const COMMIT_API = "https://api.github.com/repos/nerif7/vanguard-library-db/comm
 let allCards: Card[] = [];
 let visibleCards: Card[] = [];
 let virtualList: VirtualList<Card> | null = null;
+let virtualGrid: VirtualGrid<Card> | null = null;
+let browseViewMode: "list" | "grid" = "list";
+let browseSort: BrowseSortKey = "name";
 let filterRefs: FilterBarRefs | null = null;
 let selectedCardNo: string | null = null;
 let cardPreview: CardPreview | null = null;
@@ -129,29 +134,60 @@ function renderCacheInfo(meta: CacheMeta | null) {
 
 // ── Browse virtual list ───────────────────────────────────────────────────────
 
-function setupVirtualList() {
-  if (virtualList) return;
-  virtualList = new VirtualList<Card>(listContainer, {
-    rowHeight: 62,
-    buffer: 8,
-    renderRow: (card, _i) =>
-      buildCardRow(card, _i, card.enCardNo === selectedCardNo, collectionQtyMap.get(card.enCardNo)),
-    onRowClick: (card) => {
-      selectedCardNo = card.enCardNo;
-      virtualList!.refresh();
-      cardPreview!.show(card);
-    },
-    emptyMessage: "No cards match the filter",
-  });
-}
-
 function refreshList() {
   if (!filterRefs) return;
   const filter = readFilterState(filterRefs);
-  visibleCards = applyFilters(allCards, filter);
-  setupVirtualList();
-  virtualList!.setItems(visibleCards);
+  const filtered = applyFilters(allCards, filter);
+  visibleCards = sortCards(filtered, browseSort, collectionQtyMap);
+
+  if (browseViewMode === "list") {
+    if (!virtualList) {
+      virtualList = new VirtualList<Card>(listContainer, {
+        rowHeight: 62,
+        buffer: 8,
+        renderRow: (card, _i) =>
+          buildCardRow(card, _i, card.enCardNo === selectedCardNo, collectionQtyMap.get(card.enCardNo)),
+        onRowClick: (card) => {
+          selectedCardNo = card.enCardNo;
+          virtualList!.refresh();
+          cardPreview!.show(card);
+        },
+        emptyMessage: "No cards match the filter",
+      });
+    }
+    virtualList.setItems(visibleCards);
+  } else {
+    if (!virtualGrid) {
+      virtualGrid = new VirtualGrid<Card>(listContainer, {
+        cellHeight: 200,
+        gap: 10,
+        buffer: 3,
+        renderCell: (card) =>
+          buildCardTile(card, card.enCardNo === selectedCardNo, {
+            badgeQty: collectionQtyMap.get(card.enCardNo),
+          }),
+        onCellClick: (card) => {
+          selectedCardNo = card.enCardNo;
+          virtualGrid!.refresh();
+          cardPreview!.show(card);
+        },
+        emptyMessage: "No cards match the filter",
+      });
+    }
+    virtualGrid.setItems(visibleCards);
+  }
+
   updateListMeta(visibleCards.length, allCards.length, filter);
+}
+
+function toggleBrowseView() {
+  virtualList?.destroy(); virtualList = null;
+  virtualGrid?.destroy(); virtualGrid = null;
+  listContainer.innerHTML = "";
+  browseViewMode = browseViewMode === "list" ? "grid" : "list";
+  const btn = document.querySelector<HTMLButtonElement>("#browseViewToggle");
+  if (btn) btn.textContent = browseViewMode === "grid" ? "☰ List" : "⊞ Grid";
+  refreshList();
 }
 
 function updateListMeta(visible: number, total: number, filter: FilterState) {
@@ -174,6 +210,15 @@ function setupFilters() {
     resetFilters(filterRefs);
     refreshList();
   });
+
+  document.querySelector<HTMLSelectElement>("#browseSort")
+    ?.addEventListener("change", (e) => {
+      browseSort = (e.target as HTMLSelectElement).value as BrowseSortKey;
+      refreshList();
+    });
+
+  document.querySelector<HTMLButtonElement>("#browseViewToggle")
+    ?.addEventListener("click", toggleBrowseView);
 }
 
 // ── Refresh collection overlay data ──────────────────────────────────────────
@@ -181,6 +226,7 @@ function setupFilters() {
 async function refreshCollectionOverlay() {
   collectionQtyMap = await getCollectionQtyMap();
   virtualList?.refresh();
+  virtualGrid?.refresh();
 }
 
 // ── Load handlers ─────────────────────────────────────────────────────────────
@@ -200,8 +246,7 @@ async function handleLoad() {
       visibleCards = allCards;
 
       setupFilters();
-      setupVirtualList();
-      virtualList!.setItems(visibleCards);
+      refreshList();
 
       setStatus(`⚡ Loaded ${allCards.length.toLocaleString("id-ID")} cards from cache in ${loadTime.toFixed(0)} ms`, "success");
       renderStats({ count: allCards.length, sizeBytes: cached.meta.sizeBytes, loadFromCacheMs: loadTime });
@@ -240,8 +285,7 @@ async function doFetchAndCache() {
   await saveMeta(meta);
 
   setupFilters();
-  setupVirtualList();
-  virtualList!.setItems(visibleCards);
+  refreshList();
 
   setStatus(`✅ Fetched ${result.cards.length.toLocaleString("id-ID")} cards (${(result.fetchTimeMs + result.parseTimeMs).toFixed(0)} ms) + cached`, "success");
   renderStats({ count: result.cards.length, sizeBytes: result.totalBytes, fetchTimeMs: result.fetchTimeMs, parseTimeMs: result.parseTimeMs });

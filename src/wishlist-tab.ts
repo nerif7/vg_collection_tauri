@@ -1,30 +1,74 @@
 import type { Card, WishlistEntry } from "./types.ts";
 import { getAllWishlistEntries, removeFromWishlist } from "./collection-db.ts";
 import { VirtualList } from "./virtual-list.ts";
+import { VirtualGrid } from "./virtual-grid.ts";
+import { buildCardTile } from "./card-tile.ts";
+
+type WishlistSortKey = "name" | "nation";
+type WishlistViewMode = "list" | "grid";
 
 // ── DOM refs ───────────────────────────────────────────────────────────────────
 
-const statsEl      = document.getElementById("wishlistStats")!;
+const statsEl       = document.getElementById("wishlistStats")!;
 const listContainer = document.getElementById("wishlistListContainer")!;
-const previewPane  = document.getElementById("wishlistPreviewPane")!;
-const previewBody  = document.getElementById("wishlistPreviewBody")!;
-const previewClose = document.getElementById("wishlistPreviewClose")!;
+const previewPane   = document.getElementById("wishlistPreviewPane")!;
+const previewBody   = document.getElementById("wishlistPreviewBody")!;
+const previewClose  = document.getElementById("wishlistPreviewClose")!;
 
 // ── State ──────────────────────────────────────────────────────────────────────
 
 let allEntries: WishlistEntry[] = [];
+let visibleEntries: WishlistEntry[] = [];
 let cardMap = new Map<string, Card>();
 let selectedCode: string | null = null;
 let virtualList: VirtualList<WishlistEntry> | null = null;
+let virtualGrid: VirtualGrid<WishlistEntry> | null = null;
+let viewMode: WishlistViewMode = "list";
+
+// Filter/sort refs — wired in initWishlistTab
+let searchEl:      HTMLInputElement;
+let sortEl:        HTMLSelectElement;
+let nationFilterEl: HTMLSelectElement;
+let typeFilterEl:  HTMLSelectElement;
+let viewToggleBtn: HTMLButtonElement;
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 
 export function initWishlistTab(cards: Card[]): void {
   cardMap = new Map(cards.map((c) => [c.enCardNo, c]));
 
+  searchEl      = document.getElementById("wishlistSearch")       as HTMLInputElement;
+  sortEl        = document.getElementById("wishlistSort")         as HTMLSelectElement;
+  nationFilterEl = document.getElementById("wishlistNationFilter") as HTMLSelectElement;
+  typeFilterEl  = document.getElementById("wishlistTypeFilter")   as HTMLSelectElement;
+  viewToggleBtn = document.getElementById("wishlistViewToggle")   as HTMLButtonElement;
+
   previewClose.addEventListener("click", closePreview);
 
-  if (!virtualList) {
+  searchEl.addEventListener("input",        applyFilters);
+  sortEl.addEventListener("change",         applyFilters);
+  nationFilterEl.addEventListener("change", applyFilters);
+  typeFilterEl.addEventListener("change",   applyFilters);
+
+  viewToggleBtn.addEventListener("click", () => {
+    setViewMode(viewMode === "grid" ? "list" : "grid");
+    applyFilters();
+  });
+
+  setViewMode("list");
+}
+
+// ── View mode ──────────────────────────────────────────────────────────────────
+
+function setViewMode(mode: WishlistViewMode): void {
+  viewMode = mode;
+  virtualList?.destroy(); virtualList = null;
+  virtualGrid?.destroy(); virtualGrid = null;
+  listContainer.innerHTML = "";
+
+  viewToggleBtn.textContent = mode === "grid" ? "☰ List" : "⊞ Grid";
+
+  if (mode === "list") {
     virtualList = new VirtualList<WishlistEntry>(listContainer, {
       rowHeight: 62,
       buffer: 8,
@@ -36,6 +80,20 @@ export function initWishlistTab(cards: Card[]): void {
       },
       emptyMessage: "Wishlist is empty — add cards from Browse tab",
     });
+  } else {
+    virtualGrid = new VirtualGrid<WishlistEntry>(listContainer, {
+      cellHeight: 200,
+      gap: 10,
+      buffer: 3,
+      renderCell: (entry) =>
+        buildCardTile(cardMap.get(entry.cardCode), entry.cardCode === selectedCode),
+      onCellClick: (entry) => {
+        selectedCode = entry.cardCode;
+        virtualGrid!.refresh();
+        openPreview(entry);
+      },
+      emptyMessage: "Wishlist is empty — add cards from Browse tab",
+    });
   }
 }
 
@@ -43,9 +101,84 @@ export function initWishlistTab(cards: Card[]): void {
 
 export async function loadWishlistTab(): Promise<void> {
   allEntries = await getAllWishlistEntries();
-  allEntries.sort((a, b) => a.cardCode.localeCompare(b.cardCode));
-  virtualList?.setItems(allEntries);
+  populateWishlistFilters();
+  applyFilters();
   renderStats();
+}
+
+function populateWishlistFilters(): void {
+  const nations = new Set<string>();
+  const types   = new Set<string>();
+
+  for (const e of allEntries) {
+    const card = cardMap.get(e.cardCode);
+    if (card) {
+      for (const n of card.nations) nations.add(n);
+      if (card.unitType) types.add(card.unitType);
+    }
+  }
+
+  const curNation = nationFilterEl?.value;
+  const curType   = typeFilterEl?.value;
+
+  const fill = (el: HTMLSelectElement, items: string[], label: string) => {
+    el.innerHTML = `<option value="all">${label}</option>`;
+    for (const v of [...items].sort()) {
+      const opt = document.createElement("option");
+      opt.value = v; opt.textContent = v;
+      el.appendChild(opt);
+    }
+  };
+
+  fill(nationFilterEl, [...nations], "All nations");
+  fill(typeFilterEl,   [...types],   "All types");
+
+  if (curNation) nationFilterEl.value = curNation;
+  if (curType)   typeFilterEl.value   = curType;
+}
+
+function sortWishlist(entries: WishlistEntry[], key: WishlistSortKey): WishlistEntry[] {
+  const arr = [...entries];
+  if (key === "name") {
+    arr.sort((a, b) => {
+      const na = cardMap.get(a.cardCode)?.name ?? a.cardCode;
+      const nb = cardMap.get(b.cardCode)?.name ?? b.cardCode;
+      return na.localeCompare(nb);
+    });
+  } else {
+    arr.sort((a, b) => {
+      const na = cardMap.get(a.cardCode)?.nations[0] ?? "";
+      const nb = cardMap.get(b.cardCode)?.nations[0] ?? "";
+      return na.localeCompare(nb) || a.cardCode.localeCompare(b.cardCode);
+    });
+  }
+  return arr;
+}
+
+function applyFilters(): void {
+  const q      = searchEl?.value.trim().toLowerCase() ?? "";
+  const nation = nationFilterEl?.value ?? "all";
+  const type   = typeFilterEl?.value   ?? "all";
+  const key    = (sortEl?.value ?? "name") as WishlistSortKey;
+
+  let filtered = allEntries;
+
+  if (q) {
+    filtered = filtered.filter((e) => {
+      const card = cardMap.get(e.cardCode);
+      return (
+        e.cardCode.toLowerCase().includes(q) ||
+        (card?.name.toLowerCase().includes(q) ?? false)
+      );
+    });
+  }
+  if (nation !== "all") filtered = filtered.filter((e) => cardMap.get(e.cardCode)?.nations.includes(nation) ?? false);
+  if (type   !== "all") filtered = filtered.filter((e) => cardMap.get(e.cardCode)?.unitType === type);
+
+  visibleEntries = sortWishlist(filtered, key);
+
+  if (viewMode === "list") virtualList?.setItems(visibleEntries);
+  else virtualGrid?.setItems(visibleEntries);
 }
 
 function renderStats(): void {
@@ -56,19 +189,17 @@ function renderStats(): void {
 
 function buildWishlistRow(entry: WishlistEntry, selected: boolean): HTMLElement {
   const card = cardMap.get(entry.cardCode);
-  const row = document.createElement("div");
+  const row  = document.createElement("div");
   row.className = selected ? "card-row card-row--selected" : "card-row";
 
   const codeEl = document.createElement("div");
-  codeEl.className = "card-row-code";
-  codeEl.textContent = entry.cardCode;
+  codeEl.className = "card-row-code"; codeEl.textContent = entry.cardCode;
 
   const middle = document.createElement("div");
   middle.className = "card-row-middle";
 
   const nameEl = document.createElement("div");
-  nameEl.className = "card-row-name";
-  nameEl.textContent = card?.name ?? entry.cardCode;
+  nameEl.className = "card-row-name"; nameEl.textContent = card?.name ?? entry.cardCode;
 
   const metaEl = document.createElement("div");
   metaEl.className = "card-row-meta";
@@ -83,8 +214,7 @@ function buildWishlistRow(entry: WishlistEntry, selected: boolean): HTMLElement 
   middle.append(nameEl, metaEl);
 
   const rarityEl = document.createElement("span");
-  rarityEl.className = "card-row-rarity";
-  rarityEl.textContent = card?.rarity ?? "—";
+  rarityEl.className = "card-row-rarity"; rarityEl.textContent = card?.rarity ?? "—";
 
   row.append(codeEl, middle, rarityEl);
   return row;
@@ -96,6 +226,7 @@ function closePreview(): void {
   previewPane.classList.remove("is-open");
   selectedCode = null;
   virtualList?.refresh();
+  virtualGrid?.refresh();
 }
 
 export function closeWishlistPreview(): void {
@@ -115,10 +246,8 @@ function renderPreview(entry: WishlistEntry): void {
     const wrap = document.createElement("div");
     wrap.className = "preview-image-wrap";
     const img = document.createElement("img");
-    img.src = card.imageUrlEn;
-    img.alt = card.name;
-    img.className = "preview-image";
-    img.loading = "lazy";
+    img.src = card.imageUrlEn; img.alt = card.name;
+    img.className = "preview-image"; img.loading = "lazy";
     wrap.appendChild(img);
     previewBody.appendChild(wrap);
   }
@@ -126,22 +255,21 @@ function renderPreview(entry: WishlistEntry): void {
   const info = document.createElement("div");
   info.className = "preview-info";
   const nameEl = document.createElement("div");
-  nameEl.className = "preview-name";
-  nameEl.textContent = card?.name ?? entry.cardCode;
+  nameEl.className = "preview-name"; nameEl.textContent = card?.name ?? entry.cardCode;
   const codeEl = document.createElement("span");
-  codeEl.className = "preview-code";
-  codeEl.textContent = entry.cardCode;
+  codeEl.className = "preview-code"; codeEl.textContent = entry.cardCode;
   info.append(nameEl, codeEl);
   previewBody.appendChild(info);
 
   const removeBtn = document.createElement("button");
   removeBtn.className = "btn-danger btn-remove-collection";
-  removeBtn.textContent = "Remove from Wishlist";
-  removeBtn.type = "button";
+  removeBtn.textContent = "Remove from Wishlist"; removeBtn.type = "button";
   removeBtn.addEventListener("click", async () => {
     await removeFromWishlist(entry.cardCode);
     allEntries = allEntries.filter((e) => e.cardCode !== entry.cardCode);
-    virtualList?.setItems(allEntries);
+    visibleEntries = visibleEntries.filter((e) => e.cardCode !== entry.cardCode);
+    if (viewMode === "list") virtualList?.setItems(visibleEntries);
+    else virtualGrid?.setItems(visibleEntries);
     renderStats();
     closePreview();
   });

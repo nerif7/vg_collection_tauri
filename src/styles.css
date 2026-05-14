@@ -185,11 +185,52 @@ h1 {
   border-top: 1px solid var(--border);
 }
 
-.collection-qty-row,
-.collection-location-row {
+.collection-qty-row {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.collection-move-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.collection-move-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.collection-move-qty {
+  width: 60px;
+  padding: 5px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+.collection-move-qty:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.collection-move-to-label {
+  font-size: 0.82rem;
+  color: var(--text-soft);
+}
+
+.collection-move-empty {
+  font-size: 0.82rem;
+  color: var(--text-soft);
+  font-style: italic;
+  margin: 0;
 }
 
 .collection-edit-label {
@@ -1043,4 +1084,180 @@ button:disabled {
   color: var(--text-soft);
   font-style: italic;
   margin-bottom: 8px;
+}
+
+/* ── Toolbar rows (Collection / Wishlist filter bars) ────────────────────── */
+
+.toolbar-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.toolbar-filters {
+  gap: 6px;
+}
+
+.filter-select {
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.82rem;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.filter-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ── Card grid tile ──────────────────────────────────────────────────────── */
+
+.card-tile {
+  display: flex;
+  flex-direction: column;
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  transition: border-color 0.12s, box-shadow 0.12s;
+}
+
+.card-tile:hover {
+  border-color: var(--accent);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+}
+
+.card-tile--selected {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.card-tile-img-wrap {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 160 / 120;
+  background: var(--bg-muted);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.card-tile-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.card-tile-img-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  color: var(--text-soft);
+}
+
+.card-tile-owned-badge {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 1px 5px;
+  border-radius: 4px;
+  line-height: 1.4;
+}
+
+.card-tile-info {
+  padding: 6px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.card-tile-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-tile-code {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-tile-meta {
+  font-size: 0.72rem;
+  color: var(--text-soft);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-tile-extra {
+  font-size: 0.72rem;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Grouped collection view ─────────────────────────────────────────────── */
+
+.group-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-muted);
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  user-select: none;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+
+.group-header:hover {
+  background: var(--bg-hover);
+}
+
+.group-arrow {
+  font-size: 0.75rem;
+  color: var(--text-soft);
+  width: 12px;
+  flex-shrink: 0;
+}
+
+.group-title {
+  font-size: 0.88rem;
+  font-weight: 600;
+  color: var(--text);
+  flex: 1;
+}
+
+.group-meta {
+  font-size: 0.75rem;
+  color: var(--text-soft);
+}
+
+.group-rows {
+  border-bottom: 1px solid var(--border);
 }
