@@ -29,18 +29,19 @@ A **Cardfight!! Vanguard** card database browser and personal collection tracker
 
 ```
 src/
-├── main.ts          # App orchestration, hybrid cache loader, global state
-├── cache.ts         # IndexedDB abstraction (card DB cache + collection data)
-├── filters.ts       # Pure filter logic — no DOM, no side effects, testable
-├── filter-bar.ts    # Filter UI wiring only (reads filters.ts, writes DOM)
-├── virtual-list.ts  # Generic virtualized list renderer (RAF-throttled)
-├── card-row.ts      # Card row DOM builder
-├── types.ts         # All TypeScript interfaces and types
-└── styles.css       # Light/dark theme styling
+├── main.ts           # App orchestration, tab routing, global state
+├── cache.ts          # IndexedDB abstraction (card DB cache + collection data)
+├── filters.ts        # Pure filter logic — no DOM, no side effects, testable
+├── filter-bar.ts     # Filter UI wiring only (reads filters.ts, writes DOM)
+├── virtual-list.ts   # Generic virtualized list renderer (RAF-throttled)
+├── card-row.ts       # Card row DOM builder (Browse view)
+├── card-preview.ts   # Preview pane + lightbox
+├── types.ts          # All TypeScript interfaces and types
+└── styles.css        # Light/dark theme styling
 
 src-tauri/src/
-├── lib.rs           # Tauri app builder, plugin registration
-└── main.rs          # Windows entry point (no console window in release)
+├── lib.rs            # Tauri app builder, plugin registration
+└── main.rs           # Windows entry point (no console window in release)
 ```
 
 ### Key Architectural Decisions
@@ -79,47 +80,98 @@ Keep files under ~200 lines where practical. If a file grows beyond that, extrac
 ### Phase 1 — Done ✅
 
 - Hybrid cache loader (IndexedDB-first ~33ms, GitHub fallback ~854ms)
+- Auto-load on startup (no manual button click)
 - Virtualized list rendering for 24k+ cards
 - Search + filter (name, card code, set, nation, unit type, trigger)
 - Performance stats panel (fetch/parse/load/render times, cache freshness)
 
-### Phase 2 — Card Preview Pane
+### Phase 2 — Done ✅
 
-When a user clicks a card row, show a preview panel with:
-
-- **Card art image** (from Cardfight!! Vanguard CDN — already whitelisted in CSP headers in `index.html`)
-- **Full stats:** Grade, Power, Critical, Shield, Clan, Nation, Trigger, Skill text
-- **"Add to Collection" button** — inline shortcut into Phase 3 flow
+- Card preview pane: click row → slide-in panel with card image + stats
+- Card image full-width (200px height), click → lightbox overlay (Esc/backdrop to close)
+- Preview pane 380px wide, 2-column tags grid, smooth transition
+- Selected row highlight (inset left border)
+- "Add to Collection" button stub (wired in Phase 3)
 
 ### Phase 3 — Collection Tracking
 
-**Core UX:** User searches for a card → clicks it → adds it to their collection.
+#### App structure (UX direction)
 
-**Data model per collection entry:**
+The primary view is the user's **own collection** — not the card browser. Navigation uses three tabs:
+
+| Tab | Content |
+|---|---|
+| **Collection** (default) | Cards owned by the user |
+| **Wishlist** | Cards the user is looking for / wants to buy |
+| **Browse** | All 24k+ cards — search here to add to Collection or Wishlist |
+
+The Browse tab is the existing Phase 1+2 view, unchanged except the "Add to Collection" button in the preview pane becomes functional.
+
+#### Collection tab
+
+**Stats bar at top:**
+- Total unique cards owned
+- Total copies (sum of all quantities)
+- Wishlist card count
+- Location count (distinct non-empty location strings)
+
+**List:** Virtualized, same `VirtualList<T>` used in Browse. Each row shows:
+- Card name + code
+- Quantity badge (e.g. `×3`)
+- Location text
+
+**Click a collection row:** Opens the existing preview pane on the right. Pane shows:
+- Card image + stats (same as Browse preview)
+- Edit section: quantity `[−] N [+]` and location free-text input — changes auto-save
+- `Remove from Collection` danger button
+
+**Filter/search within collection:** Search input that filters by name, code, location. No dropdowns needed (collection is personal/small).
+
+#### Wishlist tab
+
+Same layout as Collection tab. Stats bar shows:
+- Total wishlist entries
+
+Each row: card name + code. No quantity or location (wishlist entries are binary — wanted or not).
+
+Click a wishlist row → preview pane shows card details + `Remove from Wishlist` button.
+
+#### Browse tab
+
+Existing view. Preview pane "Add to Collection" button now opens a small inline form within the pane (quantity + location input) before saving. Separate "Add to Wishlist" link below it.
+
+If the card is already in the collection, the button changes to "Edit in Collection" and clicking switches to the Collection tab with that card selected.
+
+#### Data model
 
 ```typescript
 interface CollectionEntry {
-  cardCode: string;       // primary key, e.g. "BT01/001"
-  quantity: number;       // copies owned
-  location: string;       // free-form: "Red Binder", "Shadow Deck", "Storage Box A"
-  wishlist: boolean;      // true = want to buy / looking for
+  cardCode: string;    // primary key — matches Card.enCardNo
+  quantity: number;    // copies owned (always >= 1)
+  location: string;    // free-form: "Red Binder", "Shadow Deck", "Storage Box A"
+}
+
+interface WishlistEntry {
+  cardCode: string;    // primary key
 }
 ```
 
-**Location rules:** Free-form text, no validation, no uniqueness constraint. User types whatever they want.
+Wishlist is a separate store from Collection — a card can be in both (e.g. owned 1 copy, still looking for more).
 
-**Storage:** Separate IndexedDB object store from the card cache. Collection data must survive card DB cache clears and refreshes.
+**Location rules:** Free-form text, no validation, no uniqueness constraint. Empty string is valid (means "unspecified").
 
-**Export formats (all required):**
+**Storage:** Two separate IndexedDB object stores — `collection` and `wishlist` — both independent of the card cache. Neither is affected by Force Refresh or Clear Cache.
+
+#### Export formats (all required)
 
 | Format | Purpose |
 |---|---|
 | JSON | Re-importable; primary backup format |
 | CSV | Opens in Excel / Google Sheets |
-| Printable HTML | Simple browser-print checklist; can be used at card shops |
-| Full backup | Single JSON blob of all app state (card cache meta + collection) |
+| Printable HTML | Simple browser-print checklist; usable at card shops |
+| Full backup | Single JSON blob: card cache meta + collection + wishlist |
 
-Implementation note: export/import will require Tauri Rust commands for file system access (dialog + write). Add commands to `lib.rs` as needed.
+Export/import requires Tauri Rust commands for file system access (dialog + write). Add `#[tauri::command]` functions to `lib.rs` as needed.
 
 ### Phase 4 — Distribution
 
