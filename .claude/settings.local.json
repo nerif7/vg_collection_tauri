@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:nerif7.github.io)",
+      "WebFetch(domain:github.com)"
+    ]
+  }
+}
