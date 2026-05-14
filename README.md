@@ -36,6 +36,10 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Browse row badge — ×N total owned qty across all locations
 - ✅ "Edit →" link in Browse preview jumps to Collection tab entry
 - ✅ Search within collection (name, card code, location)
+- ✅ Location management — locations stored separately; default "my collection" seeded on first run
+- ✅ Manage Locations modal — add new locations from Collection toolbar
+- ✅ Move location — change entry location via select dropdown (only existing locations)
+- ✅ Centered custom confirm dialog (replaces native browser popup)
 
 **Phase 4 — Distribution (📋 Planned)**
 - 📋 Export: JSON, CSV, printable HTML, full backup
@@ -110,6 +114,8 @@ vg_collection_tauri/
 │   ├── card-preview.ts     # Preview pane + lightbox (Browse tab)
 │   ├── collection-tab.ts   # Collection tab view + edit controls
 │   ├── wishlist-tab.ts     # Wishlist tab view
+│   ├── location-manager.ts # Location management modal
+│   ├── confirm-dialog.ts   # Custom centered confirm dialog
 │   └── styles.css          # Light/dark theme
 ├── src-tauri/              # Rust backend
 │   ├── src/

@@ -2,7 +2,7 @@ import type { Card, CollectionEntry } from "./types.ts";
 import {
   getCollectionByCardCode, mergeOrAdd,
   isInWishlist, addToWishlist, removeFromWishlist,
-  getUniqueLocations,
+  getAllLocations,
 } from "./collection-db.ts";
 
 export interface BrowsePreviewCallbacks {
@@ -105,7 +105,7 @@ export class CardPreview {
     const [existingEntries, inWishlist, locations] = await Promise.all([
       getCollectionByCardCode(card.enCardNo),
       isInWishlist(card.enCardNo),
-      getUniqueLocations(),
+      getAllLocations(),
     ]);
 
     const wrapper = document.createElement("div");
@@ -129,41 +129,41 @@ export class CardPreview {
     qtyInput.value = "1";
     qtyInput.className = "preview-qty-input";
 
-    // location input with datalist
-    const datalistId = `dl-${card.enCardNo.replace(/[^a-z0-9]/gi, "")}`;
-    const locInput = document.createElement("input");
-    locInput.type = "text";
-    locInput.className = "preview-loc-input";
-    locInput.placeholder = "Location (optional)";
-    locInput.setAttribute("list", datalistId);
-
-    const datalist = document.createElement("datalist");
-    datalist.id = datalistId;
-    for (const loc of locations) {
-      const opt = document.createElement("option");
-      opt.value = loc;
-      datalist.appendChild(opt);
-    }
-
     const addBtn = document.createElement("button");
     addBtn.type = "button";
     addBtn.className = "btn-add-collection";
     addBtn.textContent = "+ Add";
 
-    addBtn.addEventListener("click", async () => {
-      const qty = Math.max(1, parseInt(qtyInput.value, 10) || 1);
-      const loc = locInput.value.trim();
-      await mergeOrAdd(card.enCardNo, loc, qty);
-      qtyInput.value = "1";
-      locInput.value = "";
-      this.callbacks?.onCollectionChanged();
-      // Refresh owned section
-      const updated = await getCollectionByCardCode(card.enCardNo);
-      renderOwned(updated);
-    });
+    if (locations.length === 0) {
+      const noLoc = document.createElement("p");
+      noLoc.className = "preview-no-locations";
+      noLoc.textContent = "No locations found. Create one in the Collection tab first.";
+      addBtn.disabled = true;
+      formRow.append(qtyInput, addBtn);
+      addForm.append(formLabel, noLoc, formRow);
+    } else {
+      const locSelect = document.createElement("select");
+      locSelect.className = "preview-loc-select";
+      for (const loc of locations) {
+        const opt = document.createElement("option");
+        opt.value = loc;
+        opt.textContent = loc;
+        locSelect.appendChild(opt);
+      }
 
-    formRow.append(qtyInput, locInput, datalist, addBtn);
-    addForm.append(formLabel, formRow);
+      addBtn.addEventListener("click", async () => {
+        const qty = Math.max(1, parseInt(qtyInput.value, 10) || 1);
+        const loc = locSelect.value;
+        await mergeOrAdd(card.enCardNo, loc, qty);
+        qtyInput.value = "1";
+        this.callbacks?.onCollectionChanged();
+        const updated = await getCollectionByCardCode(card.enCardNo);
+        renderOwned(updated);
+      });
+
+      formRow.append(qtyInput, locSelect, addBtn);
+      addForm.append(formLabel, formRow);
+    }
 
     // ── Already owned chips ───────────────────────────────────────────
     const ownedSection = document.createElement("div");

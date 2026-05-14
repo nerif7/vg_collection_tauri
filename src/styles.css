@@ -889,3 +889,158 @@ button:disabled {
   object-fit: contain;
   cursor: default;
 }
+
+/* ── Modal overlay (shared by confirm dialog + location manager) ─────────── */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s;
+}
+
+.modal-overlay.is-open {
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* ── Confirm dialog ──────────────────────────────────────────────────────── */
+
+.confirm-dialog {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 28px 24px 20px;
+  min-width: 280px;
+  max-width: 380px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+.confirm-message {
+  font-size: 0.95rem;
+  line-height: 1.55;
+  margin-bottom: 20px;
+  color: var(--text);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+/* ── Location manager dialog ─────────────────────────────────────────────── */
+
+.modal-dialog {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  min-width: 320px;
+  max-width: 460px;
+  width: 90vw;
+  max-height: 70vh;
+  overflow-y: auto;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 18px;
+}
+
+.modal-header h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+}
+
+.location-add-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.location-new-input {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.88rem;
+}
+
+.location-new-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.location-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.location-list-item {
+  padding: 9px 4px;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.88rem;
+  color: var(--text);
+}
+
+.location-list-item:last-child {
+  border-bottom: none;
+}
+
+.location-list-empty {
+  padding: 12px 4px;
+  color: var(--text-soft);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+/* ── Location select (collection edit + browse add form) ─────────────────── */
+
+.collection-location-select,
+.preview-loc-select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.collection-location-select {
+  flex: 1;
+}
+
+.preview-loc-select {
+  flex: 1;
+  min-width: 0;
+}
+
+.collection-location-select:focus,
+.preview-loc-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ── No-locations notice in Browse preview ───────────────────────────────── */
+
+.preview-no-locations {
+  font-size: 0.82rem;
+  color: var(--text-soft);
+  font-style: italic;
+  margin-bottom: 8px;
+}

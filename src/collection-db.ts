@@ -3,6 +3,7 @@ import type { CollectionEntry, WishlistEntry } from "./types.ts";
 
 const STORE_COLLECTION = "collection";
 const STORE_WISHLIST   = "wishlist";
+const STORE_LOCATIONS  = "locations";
 
 function tx<T>(
   storeName: string,
@@ -80,11 +81,26 @@ export async function getCollectionQtyMap(): Promise<Map<string, number>> {
   return map;
 }
 
-/** Returns sorted list of non-empty location strings — used for autocomplete. */
-export async function getUniqueLocations(): Promise<string[]> {
-  const entries = await getAllCollectionEntries();
-  const locs = new Set(entries.map((e) => e.location).filter((l) => l !== ""));
-  return [...locs].sort();
+/** Returns all location names from the locations store, sorted A–Z. */
+export async function getAllLocations(): Promise<string[]> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t    = db.transaction(STORE_LOCATIONS, "readonly");
+    const req  = t.objectStore(STORE_LOCATIONS).getAll() as IDBRequest<{ name: string }[]>;
+    req.onsuccess = () => resolve(req.result.map((r) => r.name).sort());
+    req.onerror   = () => reject(req.error);
+    t.oncomplete  = () => db.close();
+  });
+}
+
+export async function addLocation(name: string): Promise<void> {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const t   = db.transaction(STORE_LOCATIONS, "readwrite");
+    const req = t.objectStore(STORE_LOCATIONS).put({ name });
+    req.onerror   = () => reject(req.error);
+    t.oncomplete  = () => { db.close(); resolve(); };
+  });
 }
 
 // ── Wishlist ───────────────────────────────────────────────────────────────────

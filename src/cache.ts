@@ -10,11 +10,12 @@
 import type { Card } from "./types.ts";
 
 const DB_NAME    = "vg_collection";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const STORE_CARDS      = "cards";
 const STORE_META       = "meta";
 const STORE_COLLECTION = "collection";
 const STORE_WISHLIST   = "wishlist";
+const STORE_LOCATIONS  = "locations";
 
 const CARDS_KEY = "all";   // single key holds entire array
 const META_KEY  = "info";
@@ -47,6 +48,10 @@ export function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_WISHLIST)) {
         db.createObjectStore(STORE_WISHLIST, { keyPath: "cardCode" });
+      }
+      if (!db.objectStoreNames.contains(STORE_LOCATIONS)) {
+        const locStore = db.createObjectStore(STORE_LOCATIONS, { keyPath: "name" });
+        locStore.add({ name: "my collection" });
       }
     };
 

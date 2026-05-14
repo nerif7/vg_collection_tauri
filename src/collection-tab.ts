@@ -2,10 +2,12 @@ import type { Card, CollectionEntry } from "./types.ts";
 import {
   getAllCollectionEntries,
   updateCollectionEntry, removeCollectionEntry,
-  getAllWishlistEntries, getUniqueLocations,
+  getAllWishlistEntries, getAllLocations,
 } from "./collection-db.ts";
 import { VirtualList } from "./virtual-list.ts";
 import { buildCollectionRow } from "./collection-row.ts";
+import { showConfirm } from "./confirm-dialog.ts";
+import { openLocationManager } from "./location-manager.ts";
 
 // ── DOM refs ───────────────────────────────────────────────────────────────────
 
@@ -32,6 +34,15 @@ export function initCollectionTab(cards: Card[]): void {
   cardMap = new Map(cards.map((c) => [c.enCardNo, c]));
 
   previewClose.addEventListener("click", closePreview);
+
+  document.getElementById("manageLocationsBtn")?.addEventListener("click", () => {
+    openLocationManager(async () => {
+      if (selectedId !== null) {
+        const entry = allEntries.find((e) => e.id === selectedId);
+        if (entry) await renderPreview(entry);
+      }
+    });
+  });
 
   searchEl.addEventListener("input", () => {
     applySearch();
@@ -131,7 +142,7 @@ async function openPreview(entry: CollectionEntry): Promise<void> {
 
 async function renderPreview(entry: CollectionEntry): Promise<void> {
   const card = cardMap.get(entry.cardCode);
-  const locations = await getUniqueLocations();
+  const locations = await getAllLocations();
 
   previewBody.innerHTML = "";
 
@@ -204,7 +215,7 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
 
   minusBtn.addEventListener("click", async () => {
     if (currentQty === 1) {
-      if (!confirm("Remove this entry from collection?")) return;
+      if (!await showConfirm("Remove this entry from collection?")) return;
       await removeCollectionEntry(entry.id!);
       allEntries = allEntries.filter((e) => e.id !== entry.id);
       applySearch();
@@ -222,7 +233,7 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
 
   qtyRow.append(qtyLabel, minusBtn, qtyDisplay, plusBtn);
 
-  // Location input with datalist
+  // Location select (move to a different existing location)
   const locationRow = document.createElement("div");
   locationRow.className = "collection-location-row";
 
@@ -230,24 +241,18 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
   locLabel.className = "collection-edit-label";
   locLabel.textContent = "Location";
 
-  const datalistId = `loc-list-${entry.id}`;
-  const locInput = document.createElement("input");
-  locInput.type = "text";
-  locInput.className = "collection-location-input";
-  locInput.value = entry.location;
-  locInput.placeholder = "e.g. Red Binder";
-  locInput.setAttribute("list", datalistId);
-
-  const datalist = document.createElement("datalist");
-  datalist.id = datalistId;
+  const locSelect = document.createElement("select");
+  locSelect.className = "collection-location-select";
   for (const loc of locations) {
     const opt = document.createElement("option");
     opt.value = loc;
-    datalist.appendChild(opt);
+    opt.textContent = loc;
+    if (loc === entry.location) opt.selected = true;
+    locSelect.appendChild(opt);
   }
 
-  locInput.addEventListener("blur", async () => {
-    const newLoc = locInput.value.trim();
+  locSelect.addEventListener("change", async () => {
+    const newLoc = locSelect.value;
     if (newLoc === entry.location) return;
     await updateCollectionEntry({ ...entry, location: newLoc });
     entry.location = newLoc;
@@ -255,7 +260,7 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
     applySearch();
   });
 
-  locationRow.append(locLabel, locInput, datalist);
+  locationRow.append(locLabel, locSelect);
 
   // Remove button
   const removeBtn = document.createElement("button");
@@ -263,7 +268,7 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
   removeBtn.textContent = "Remove from Collection";
   removeBtn.type = "button";
   removeBtn.addEventListener("click", async () => {
-    if (!confirm("Remove this entry from collection?")) return;
+    if (!await showConfirm("Remove this entry from collection?")) return;
     await removeCollectionEntry(entry.id!);
     allEntries = allEntries.filter((e) => e.id !== entry.id);
     applySearch();
