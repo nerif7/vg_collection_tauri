@@ -1,76 +1,105 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'self'; img-src 'self' https://en.cf-vanguard.com data:; connect-src 'self' https://raw.githubusercontent.com https://api.github.com; style-src 'self' 'unsafe-inline';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>VG Collection — Tauri POC</title>
+  <title>VG Collection</title>
 </head>
 <body>
   <div class="app">
     <header>
-      <h1>🃏 VG Collection — Tauri POC</h1>
-      <p class="subtitle">
-        Search + filter + virtualized list untuk <code>24k+</code> kartu.
-      </p>
+      <h1>VG Collection</h1>
     </header>
 
-    <div class="actions">
-      <button id="refreshBtn" type="button" class="btn-secondary">Force Refresh</button>
-      <button id="clearBtn" type="button" class="btn-danger">Clear Cache</button>
-    </div>
+    <nav class="tab-nav" id="tabNav">
+      <button class="tab-btn is-active" data-tab="collection" type="button">Collection</button>
+      <button class="tab-btn" data-tab="wishlist" type="button">Wishlist</button>
+      <button class="tab-btn" data-tab="browse" type="button">Browse</button>
+    </nav>
 
-    <div id="status" class="status status-info"></div>
+    <!-- ── Collection tab ──────────────────────────────────────────── -->
+    <div id="tabCollection" class="tab-panel">
+      <div id="collectionStats" class="collection-stats"></div>
 
-    <div id="cacheInfo" class="cache-info"></div>
-
-    <div id="stats" class="stats"></div>
-
-    <div class="list-section">
-      <div class="list-header">
-        <h3>Browse Cards</h3>
-        <div id="listMeta" class="list-meta">— kartu</div>
+      <div class="collection-toolbar">
+        <input type="search" id="collectionSearch"
+               placeholder="Search name, code, location…" autocomplete="off">
+        <div class="collection-toolbar-actions">
+          <button id="exportBtn" type="button" class="btn-secondary btn-sm">Export</button>
+          <button id="importBtn" type="button" class="btn-secondary btn-sm">Import</button>
+        </div>
       </div>
 
-      <div id="filterBar" class="filter-bar">
-        <input
-          type="search"
-          id="searchInput"
-          placeholder="🔍 Cari nama, kode, race, clan, nation..."
-          autocomplete="off"
-        >
-        <select id="setFilter">
-          <option value="all">Semua set</option>
-        </select>
-        <select id="nationFilter">
-          <option value="all">Semua nation</option>
-        </select>
-        <select id="unitTypeFilter">
-          <option value="all">Semua tipe</option>
-        </select>
-        <select id="triggerFilter">
-          <option value="all">Semua trigger</option>
-        </select>
-        <button id="clearFiltersBtn" type="button" class="btn-clear-filters" title="Reset semua filter">
-          ✕ Clear
-        </button>
-      </div>
+      <div id="collectionListMeta" class="list-meta" style="margin-bottom:6px">— entries</div>
 
       <div class="browse-layout">
-        <div id="cardListContainer" class="card-list-container"></div>
-        <aside id="previewPane" class="preview-pane">
+        <div id="collectionListContainer" class="card-list-container"></div>
+        <aside id="collectionPreviewPane" class="preview-pane">
           <div class="preview-header">
             <span class="preview-header-title">Card Details</span>
-            <button id="previewClose" class="btn-preview-close" type="button">✕</button>
+            <button id="collectionPreviewClose" class="btn-preview-close" type="button">✕</button>
           </div>
-          <div id="previewBody" class="preview-body"></div>
+          <div id="collectionPreviewBody" class="preview-body"></div>
         </aside>
       </div>
     </div>
 
-    <div class="note">
-      <strong>Performance:</strong> Filter di-apply ke 24k cards via <code>Array.filter</code>, lalu virtualized list render hanya rows yang visible. Total response time biasanya &lt;20 ms.
+    <!-- ── Wishlist tab ─────────────────────────────────────────────── -->
+    <div id="tabWishlist" class="tab-panel tab-panel--hidden">
+      <div id="wishlistStats" class="collection-stats"></div>
+
+      <div class="browse-layout">
+        <div id="wishlistListContainer" class="card-list-container"></div>
+        <aside id="wishlistPreviewPane" class="preview-pane">
+          <div class="preview-header">
+            <span class="preview-header-title">Card Details</span>
+            <button id="wishlistPreviewClose" class="btn-preview-close" type="button">✕</button>
+          </div>
+          <div id="wishlistPreviewBody" class="preview-body"></div>
+        </aside>
+      </div>
+    </div>
+
+    <!-- ── Browse tab ──────────────────────────────────────────────── -->
+    <div id="tabBrowse" class="tab-panel tab-panel--hidden">
+      <div class="actions">
+        <button id="refreshBtn" type="button" class="btn-secondary">Force Refresh</button>
+        <button id="clearBtn" type="button" class="btn-danger">Clear Cache</button>
+      </div>
+
+      <div id="status" class="status status-info"></div>
+      <div id="cacheInfo" class="cache-info"></div>
+      <div id="stats" class="stats"></div>
+
+      <div class="list-section">
+        <div class="list-header">
+          <h3>Browse Cards</h3>
+          <div id="listMeta" class="list-meta">— cards</div>
+        </div>
+
+        <div id="filterBar" class="filter-bar">
+          <input type="search" id="searchInput"
+                 placeholder="Search name, code, race, clan, nation…" autocomplete="off">
+          <select id="setFilter"><option value="all">All sets</option></select>
+          <select id="nationFilter"><option value="all">All nations</option></select>
+          <select id="unitTypeFilter"><option value="all">All types</option></select>
+          <select id="triggerFilter"><option value="all">All triggers</option></select>
+          <button id="clearFiltersBtn" type="button" class="btn-clear-filters">✕ Clear</button>
+        </div>
+
+        <div class="browse-layout">
+          <div id="cardListContainer" class="card-list-container"></div>
+          <aside id="previewPane" class="preview-pane">
+            <div class="preview-header">
+              <span class="preview-header-title">Card Details</span>
+              <button id="previewClose" class="btn-preview-close" type="button">✕</button>
+            </div>
+            <div id="previewBody" class="preview-body"></div>
+          </aside>
+        </div>
+      </div>
     </div>
   </div>
 

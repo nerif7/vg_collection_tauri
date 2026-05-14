@@ -72,6 +72,299 @@ h1 {
   border-radius: 3px;
 }
 
+/* ── Tab navigation ────────────────────────────────────────────── */
+.tab-nav {
+  display: flex;
+  gap: 2px;
+  margin-bottom: 16px;
+  border-bottom: 2px solid var(--border);
+  padding-bottom: 0;
+}
+
+.tab-btn {
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  padding: 8px 18px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  border-radius: 6px 6px 0 0;
+  cursor: pointer;
+  transition: color 0.12s, border-color 0.12s;
+}
+.tab-btn:hover:not(:disabled) {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+.tab-btn.is-active {
+  color: var(--accent-dark);
+  border-bottom-color: var(--accent);
+  background: transparent;
+}
+
+.tab-panel { display: block; }
+.tab-panel--hidden { display: none; }
+
+/* ── Collection stats bar ───────────────────────────────────────── */
+.collection-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+/* ── Collection toolbar ─────────────────────────────────────────── */
+.collection-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.collection-toolbar input[type="search"] {
+  flex: 1 1 200px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 7px 10px;
+  font-size: 0.82rem;
+  font-family: inherit;
+  color: var(--text);
+  outline: none;
+  transition: border-color 0.15s;
+}
+.collection-toolbar input[type="search"]:focus { border-color: var(--accent); }
+
+.collection-toolbar-actions { display: flex; gap: 6px; }
+
+.btn-sm {
+  padding: 6px 10px;
+  font-size: 0.78rem;
+}
+
+/* ── Qty badge on card-row-right ────────────────────────────────── */
+.card-row-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.card-row-owned-badge {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: white;
+  background: var(--accent);
+  padding: 2px 6px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* ── Collection qty badge (collection rows) ─────────────────────── */
+.card-row-qty-badge {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-muted);
+  padding: 3px 8px;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+/* ── Collection edit section (preview pane) ─────────────────────── */
+.collection-edit-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.collection-qty-row,
+.collection-location-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collection-edit-label {
+  font-size: 0.72rem;
+  color: var(--text-soft);
+  min-width: 62px;
+}
+
+.qty-btn {
+  background: var(--bg-muted);
+  color: var(--text);
+  border: 1px solid var(--border);
+  padding: 4px 10px;
+  border-radius: 5px;
+  font-size: 1rem;
+  line-height: 1;
+  font-weight: 600;
+}
+.qty-btn:hover:not(:disabled) { background: var(--bg-hover); }
+
+.qty-display {
+  font-size: 0.95rem;
+  font-weight: 600;
+  min-width: 24px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.collection-location-input {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 0.82rem;
+  font-family: inherit;
+  color: var(--text);
+  outline: none;
+}
+.collection-location-input:focus { border-color: var(--accent); }
+
+.btn-remove-collection {
+  width: 100%;
+  background: transparent;
+  color: var(--red);
+  border: 1px solid var(--red);
+  padding: 7px;
+  font-size: 0.82rem;
+  border-radius: 6px;
+  margin-top: 4px;
+}
+.btn-remove-collection:hover:not(:disabled) { background: rgba(197, 48, 48, 0.10); }
+
+/* ── Browse preview: Add to Collection form ─────────────────────── */
+.preview-collection-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+}
+
+.preview-add-form-label {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-soft);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  margin-bottom: 4px;
+}
+
+.preview-add-form-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.preview-qty-input {
+  width: 56px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 0.82rem;
+  font-family: inherit;
+  color: var(--text);
+  outline: none;
+  text-align: center;
+}
+.preview-qty-input:focus { border-color: var(--accent); }
+
+.preview-loc-input {
+  flex: 1;
+  min-width: 100px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 5px 8px;
+  font-size: 0.82rem;
+  font-family: inherit;
+  color: var(--text);
+  outline: none;
+}
+.preview-loc-input:focus { border-color: var(--accent); }
+
+.btn-add-collection {
+  background: var(--accent);
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: 5px;
+  font-size: 0.82rem;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+.btn-add-collection:hover { background: var(--accent-dark); }
+
+/* ── Already owned chips ────────────────────────────────────────── */
+.preview-owned-section {
+  font-size: 0.78rem;
+}
+
+.preview-owned-label {
+  color: var(--text-soft);
+  margin-bottom: 4px;
+}
+
+.preview-owned-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+}
+
+.preview-owned-chip {
+  background: var(--bg-muted);
+  color: var(--text);
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+}
+
+.preview-owned-edit {
+  background: transparent;
+  color: var(--accent);
+  border: none;
+  font-size: 0.75rem;
+  padding: 2px 4px;
+  cursor: pointer;
+  font-weight: 500;
+}
+.preview-owned-edit:hover { text-decoration: underline; background: transparent; }
+
+/* ── Wishlist button ────────────────────────────────────────────── */
+.btn-wishlist {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+  font-size: 0.78rem;
+  border-radius: 5px;
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.btn-wishlist:hover { background: var(--bg-muted); color: var(--text); }
+.btn-wishlist--active {
+  color: var(--red);
+  border-color: var(--red);
+}
+.btn-wishlist--active:hover { background: rgba(197, 48, 48, 0.08); }
+
 /* ── Buttons ───────────────────────────────────────────────────── */
 .actions {
   display: flex;
@@ -272,6 +565,14 @@ button:disabled {
   border-bottom: 1px solid var(--border);
   align-items: center;
   transition: background 0.08s;
+}
+
+/* Right column for Browse rows (rarity + optional owned badge) */
+.card-row .card-row-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .card-row:hover {

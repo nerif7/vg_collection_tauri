@@ -4,16 +4,19 @@
 
 import type { Card } from "./types.ts";
 
-export function buildCardRow(card: Card, _index: number, selected = false): HTMLElement {
+export function buildCardRow(
+  card: Card,
+  _index: number,
+  selected = false,
+  collectionQty?: number,
+): HTMLElement {
   const row = document.createElement("div");
   row.className = selected ? "card-row card-row--selected" : "card-row";
 
-  // Column 1: cardCode (monospace, blue)
   const codeEl = document.createElement("div");
   codeEl.className = "card-row-code";
   codeEl.textContent = card.enCardNo;
 
-  // Column 2: name + meta (flexible)
   const middle = document.createElement("div");
   middle.className = "card-row-middle";
 
@@ -24,19 +27,30 @@ export function buildCardRow(card: Card, _index: number, selected = false): HTML
   const meta = document.createElement("div");
   meta.className = "card-row-meta";
   const parts: string[] = [];
-  if (card.unitType)             parts.push(card.unitType);
-  if (card.grade !== null)       parts.push(`G${card.grade}`);
-  if (card.trigger)              parts.push(card.trigger);
-  if (card.nations.length > 0)   parts.push(card.nations.join("/"));
+  if (card.unitType)           parts.push(card.unitType);
+  if (card.grade !== null)     parts.push(`G${card.grade}`);
+  if (card.trigger)            parts.push(card.trigger);
+  if (card.nations.length > 0) parts.push(card.nations.join("/"));
   meta.textContent = parts.join(" · ");
 
   middle.append(name, meta);
 
-  // Column 3: rarity badge
+  // Right side: rarity + optional collection badge
+  const right = document.createElement("div");
+  right.className = "card-row-right";
+
+  if (collectionQty !== undefined && collectionQty > 0) {
+    const badge = document.createElement("span");
+    badge.className = "card-row-owned-badge";
+    badge.textContent = `×${collectionQty}`;
+    right.appendChild(badge);
+  }
+
   const rarity = document.createElement("span");
   rarity.className = "card-row-rarity";
   rarity.textContent = card.rarity ?? "—";
+  right.appendChild(rarity);
 
-  row.append(codeEl, middle, rarity);
+  row.append(codeEl, middle, right);
   return row;
 }

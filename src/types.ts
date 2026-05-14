@@ -45,3 +45,14 @@ export interface FetchResult {
   fetchTimeMs: number;
   parseTimeMs: number;
 }
+
+export interface CollectionEntry {
+  id?: number;       // autoIncrement PK; undefined when creating
+  cardCode: string;  // matches Card.enCardNo
+  quantity: number;  // always >= 1
+  location: string;  // free-form; "" = unspecified
+}
+
+export interface WishlistEntry {
+  cardCode: string;  // primary key
+}

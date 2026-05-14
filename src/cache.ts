@@ -10,9 +10,11 @@
 import type { Card } from "./types.ts";
 
 const DB_NAME    = "vg_collection";
-const DB_VERSION = 1;
-const STORE_CARDS = "cards";
-const STORE_META  = "meta";
+const DB_VERSION = 2;
+const STORE_CARDS      = "cards";
+const STORE_META       = "meta";
+const STORE_COLLECTION = "collection";
+const STORE_WISHLIST   = "wishlist";
 
 const CARDS_KEY = "all";   // single key holds entire array
 const META_KEY  = "info";
@@ -26,7 +28,7 @@ export interface CacheMeta {
 
 // ── Open database ─────────────────────────────────────────────────────────────
 
-function openDB(): Promise<IDBDatabase> {
+export function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
 
@@ -37,6 +39,14 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains(STORE_META)) {
         db.createObjectStore(STORE_META);
+      }
+      if (!db.objectStoreNames.contains(STORE_COLLECTION)) {
+        const col = db.createObjectStore(STORE_COLLECTION, { keyPath: "id", autoIncrement: true });
+        col.createIndex("cardCode", "cardCode", { unique: false });
+        col.createIndex("location", "location", { unique: false });
+      }
+      if (!db.objectStoreNames.contains(STORE_WISHLIST)) {
+        db.createObjectStore(STORE_WISHLIST, { keyPath: "cardCode" });
       }
     };
 
