@@ -287,6 +287,12 @@ Also provide a **manual "Force Refresh" button** in the UI for the user to trigg
 
 ---
 
+## Git Workflow
+
+Before every commit, update `README.md` to reflect the current state — phase status, new features, module structure changes. Commit the README in the same commit or immediately after.
+
+---
+
 ## Development Commands
 
 ```bash
