@@ -43,9 +43,11 @@ src/
 ├── card-preview.ts       # Preview pane + lightbox (Browse tab)
 ├── tab-nav.ts            # Tab navigation wiring
 ├── collection-tab.ts     # Collection tab — list/grid/grouped + edit controls
+├── collection-edit.ts    # Edit section DOM builder (qty/move/remove controls + callbacks)
 ├── wishlist-tab.ts       # Wishlist tab view
 ├── location-manager.ts   # Manage Locations modal
 ├── confirm-dialog.ts     # Custom centered confirm dialog (replaces native popup)
+├── export-import.ts      # Export/Import backup logic (Tauri invoke + import dialog)
 ├── types.ts              # All TypeScript interfaces and types
 └── styles.css            # Light/dark theme styling
 
@@ -234,53 +236,17 @@ Export/import uses Tauri Rust commands (`#[tauri::command]` in `lib.rs`) for nat
 
 **Location autocomplete:** When user types in any location input, show a dropdown of previously used location strings (sourced from all current collection entries). Included in Phase 3.
 
-### Phase 3.5 — Export/Import + Auto-update + Polish (📋 Next)
+### Phase 3.5 — Export/Import + Auto-update + Polish ✅ Done
 
-**1. Auto-update DB** *(start here)*
-
-Implement the hybrid SHA strategy from Data & Caching:
-- On every app startup: silently fetch latest commit SHA from GitHub API
-- Compare against cached SHA in IndexedDB meta store
-- If SHA differs: auto-refresh in background, show toast notification "Cards updated! X cards."
-- If rate-limited (60 req/hr unauthenticated): skip SHA check, fall back to 7-day threshold
-- Show "Checking for updates…" spinner in **top toolbar / header** while check runs
-- SHA check runs on startup only (not on interval, not on Force Refresh)
-
-**2. Export/Import** *(Tauri native dialog)*
-
-Use `tauri-plugin-dialog` + `tauri-plugin-fs` (add to Cargo.toml + capabilities).
-
-**Export — Full backup JSON first**, then other formats:
-
-| Format | Content | Sort |
-|---|---|---|
-| Full backup JSON | `{ collection: CollectionEntry[], wishlist: WishlistEntry[], meta: CacheMeta }` | — |
-| CSV | Code, Quantity, Location | location → code |
-| Printable HTML | Table with card name | location → code |
-| JSON (collection only) | Raw `CollectionEntry[]` | as-is |
-
-**Import:**
-- Native file picker
-- Ask user: **"Merge with current collection"** or **"Replace current collection"**
-  - Merge: entries with same `cardCode + location` → update qty; new entries → add
-  - Replace: clear all existing entries, then load from backup
-- If backup contains unknown card codes (not in current cards.json): **import anyway, show warning** — "X cards not found in current DB — they will still be saved."
-- Wishlist included in full backup; import also restores wishlist (same Merge/Replace choice)
-
-**3. Performance Measurement** *(replace estimates with real data)*
-
-Use DevTools Performance panel to measure actual numbers:
-- Filter time (target: < 100ms)
-- Collection load from IndexedDB
-- Grid render time
-- Virtual list scroll performance
-
-Update README performance table and LEARN.md with real measured values.
-
-**4. Polish / Bug Fixes:**
-- ✅ Bug: `moveQtyInput.max` not synced — **fixed**
-- Debt: Grouped view uses full DOM re-render on every filter change (not virtualized); acceptable for typical collections, may lag at 500+ entries
-- Refactor: Extract `buildEditSection` from `collection-tab.ts` (412 lines → ~295 after extraction to `collection-edit.ts`)
+- ✅ Auto-update: startup SHA check vs GitHub → auto-refresh + toast if outdated; skip if rate-limited
+- ✅ Export: full backup JSON `{ collection, wishlist, meta }` via Tauri native save dialog
+- ✅ Import: native open dialog → Merge or Replace dialog; warns about unknown card codes; restores wishlist
+- ✅ Fix: `moveQtyInput.max` now syncs when qty is changed via +/− buttons
+- ✅ Fix: full move (move all copies) now merges with existing destination entry instead of creating duplicate
+- ✅ Fix: `deduplicateCollection()` runs on startup to clean up any existing duplicates; Add button disabled during async
+- ✅ Fix: Browse tab ×N badges update in real-time after Collection tab mutations
+- ✅ Refactor: `buildEditSection` extracted from `collection-tab.ts` → `collection-edit.ts` (callbacks pattern)
+- 📋 Performance: measure real numbers with DevTools — replace estimates in README (manual task)
 
 ### Phase 4 — Distribution
 
@@ -305,17 +271,16 @@ Update README performance table and LEARN.md with real measured values.
 - **Metadata store:** Caches fetch timestamp, commit SHA, card count, file size
 - **Staleness threshold:** 7 days
 
-### Update Strategy (Hybrid)
-
-> **Status:** SHA check not yet implemented. Currently only manual Force Refresh works. Auto-update is planned for Phase 3.5.
+### Update Strategy (Hybrid) ✅ Implemented
 
 On every app startup:
 1. Silently fetch the latest commit SHA from the GitHub API (non-blocking)
 2. Compare against the cached SHA in IndexedDB metadata
-3. If different → trigger a background refresh and notify the user
-4. Show a non-blocking "Checking for updates…" indicator in the stats panel
+3. If different → trigger a background refresh and show toast "Cards updated — X cards loaded."
+4. Show a "Checking for updates…" spinner in the top toolbar while check runs
+5. If rate-limited or network error → `fetchLatestCommitSha()` returns `null`; treated as "up to date" (silent skip)
 
-Also provide a **manual "Force Refresh" button** in the UI for the user to trigger immediately.
+Also provides a **manual "Force Refresh" button** for immediate re-fetch.
 
 ### Collection & Wishlist Data
 
@@ -342,10 +307,8 @@ Also provide a **manual "Force Refresh" button** in the UI for the user to trigg
 |---|---|---|
 | CSP disabled | `src-tauri/tauri.conf.json` | Must be re-enabled and configured before distribution |
 | Single `"all"` IndexedDB key | `cache.ts` | Stores 10MB as one value; fine for now, revisit if DB grows significantly |
-| No error recovery UI | `main.ts` | Errors shown as inline text; consider toast/modal when collection features land |
-| Rust backend mostly unused | `src-tauri/src/lib.rs` | Only `tauri-plugin-opener` registered; file I/O for Phase 3.5 export needs Rust commands |
+| No error recovery UI | `main.ts` | Errors shown as inline text; no retry or recovery flow for network failures |
 | Grouped view not virtualized | `collection-grouped.ts` | Full DOM re-render on each filter change; fine for typical collections, may lag at 500+ entries |
-| ~~Move qty input max not synced~~ | ~~`collection-tab.ts`~~ | ~~Fixed: hoisted `moveQtyInput` declaration so +/− handlers can sync `max`~~ |
 | Performance targets unverified | All | Targets in this doc are estimates; not yet measured with DevTools profiling |
 
 ---
@@ -380,6 +343,7 @@ Windows build output: `src-tauri/target/release/bundle/msi/`
 | `@tauri-apps/api@2` | Frontend Tauri bridge (invoke, events) |
 | `@tauri-apps/cli@2` | Build toolchain |
 | `tauri-plugin-opener` | Open URLs in system browser (Rust side) |
+| `tauri-plugin-dialog` | Native file save/open dialogs (Rust side, used by export/import) |
 | `vite` | Frontend bundler and dev server |
 
 Card image CDN and GitHub API are whitelisted in `index.html` CSP `<meta>` tags.
