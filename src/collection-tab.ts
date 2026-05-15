@@ -348,11 +348,13 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
   const plusBtn = document.createElement("button");
   plusBtn.className = "qty-btn"; plusBtn.textContent = "+"; plusBtn.type = "button";
 
+  let moveQtyInput: HTMLInputElement | null = null;
   let currentQty = entry.quantity;
 
   plusBtn.addEventListener("click", async () => {
     currentQty++;
     qtyDisplay.textContent = String(currentQty);
+    if (moveQtyInput) moveQtyInput.max = String(currentQty);
     await updateCollectionEntry({ ...entry, quantity: currentQty });
     entry.quantity = currentQty;
     syncEntryInList(entry);
@@ -369,6 +371,7 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
     }
     currentQty--;
     qtyDisplay.textContent = String(currentQty);
+    if (moveQtyInput) moveQtyInput.max = String(currentQty);
     await updateCollectionEntry({ ...entry, quantity: currentQty });
     entry.quantity = currentQty;
     syncEntryInList(entry);
@@ -394,7 +397,7 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
     const moveRow = document.createElement("div");
     moveRow.className = "collection-move-row";
 
-    const moveQtyInput = document.createElement("input");
+    moveQtyInput = document.createElement("input");
     moveQtyInput.type = "number"; moveQtyInput.min = "1";
     moveQtyInput.max = String(currentQty); moveQtyInput.value = "1";
     moveQtyInput.className = "collection-move-qty";
@@ -415,7 +418,7 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
     moveBtn.textContent = "Move →";
 
     moveBtn.addEventListener("click", async () => {
-      const qty        = Math.min(Math.max(1, parseInt(moveQtyInput.value, 10) || 1), currentQty);
+      const qty        = Math.min(Math.max(1, parseInt(moveQtyInput!.value, 10) || 1), currentQty);
       const toLocation = moveLocSelect.value;
       const isFullMove = qty >= currentQty;
       await movePartial({ ...entry, quantity: currentQty }, toLocation, qty);

@@ -54,28 +54,35 @@ committing. Use TypeScript's "Find All References" or `grep` across the project.
 
 ---
 
-### Bug 3: Move qty input max not synced after +/− changes
+### Bug 3: Move qty input max not synced after +/− changes ✅ Fixed
 
 **What happened:** In the collection preview pane, the "Move copies" section has a
 number input with `max = entry.quantity`. If the user first clicks `[+]` to increase qty
-from 2 to 3, then tries to move 3 copies, the input rejects 3 because `max` is still 2
+from 2 to 3, then tries to move 3 copies, the input rejects 3 because `max` was still 2
 (the original value at preview open time).
 
-**Current status:** Known bug, not yet fixed. Added to Known Technical Debt in CLAUDE.md.
+**Root cause:** `moveQtyInput` was declared with `const` inside the `else` block that
+builds the move UI. The `[+]`/`[−]` button handlers were defined before that block —
+so they had no reference to `moveQtyInput` and couldn't update its `max`.
 
-**Root cause:** `moveQtyInput.max` is set once when the edit section is built:
+**The fix:** Hoisted `moveQtyInput` declaration to the outer closure scope:
 ```typescript
-moveQtyInput.max = String(currentQty); // set at build time, never updated
+let moveQtyInput: HTMLInputElement | null = null; // hoisted before handlers
+
+plusBtn.addEventListener("click", async () => {
+  currentQty++;
+  qtyDisplay.textContent = String(currentQty);
+  if (moveQtyInput) moveQtyInput.max = String(currentQty); // sync!
+  // ...
+});
+
+// later, inside the else block — assignment (not const):
+moveQtyInput = document.createElement("input");
 ```
 
-The `[+]`/`[−]` click handlers update `currentQty` but don't update `moveQtyInput.max`.
-
-**The fix (planned):** After each `[+]`/`[−]` click, update both:
-```typescript
-currentQty++;
-qtyDisplay.textContent = String(currentQty);
-moveQtyInput.max = String(currentQty); // sync the move input's max
-```
+**Lesson:** When two parts of a function need to share a mutable reference, hoist the
+declaration above both. `const` inside a block creates a new variable scoped to that
+block — the outer closure can't see it.
 
 ---
 

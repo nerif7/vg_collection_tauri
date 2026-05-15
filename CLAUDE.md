@@ -236,23 +236,51 @@ Export/import uses Tauri Rust commands (`#[tauri::command]` in `lib.rs`) for nat
 
 ### Phase 3.5 — Export/Import + Auto-update + Polish (📋 Next)
 
-**Export** — Tauri Rust commands for native file dialogs; four formats:
+**1. Auto-update DB** *(start here)*
+
+Implement the hybrid SHA strategy from Data & Caching:
+- On every app startup: silently fetch latest commit SHA from GitHub API
+- Compare against cached SHA in IndexedDB meta store
+- If SHA differs: auto-refresh in background, show toast notification "Cards updated! X cards."
+- If rate-limited (60 req/hr unauthenticated): skip SHA check, fall back to 7-day threshold
+- Show "Checking for updates…" spinner in **top toolbar / header** while check runs
+- SHA check runs on startup only (not on interval, not on Force Refresh)
+
+**2. Export/Import** *(Tauri native dialog)*
+
+Use `tauri-plugin-dialog` + `tauri-plugin-fs` (add to Cargo.toml + capabilities).
+
+**Export — Full backup JSON first**, then other formats:
 
 | Format | Content | Sort |
 |---|---|---|
-| JSON | Raw `CollectionEntry[]` | as-is |
+| Full backup JSON | `{ collection: CollectionEntry[], wishlist: WishlistEntry[], meta: CacheMeta }` | — |
 | CSV | Code, Quantity, Location | location → code |
 | Printable HTML | Table with card name | location → code |
-| Full backup | `{ collection, wishlist, meta }` | — |
+| JSON (collection only) | Raw `CollectionEntry[]` | as-is |
 
-**Import** — native file picker, then ask Merge vs Replace. Full backup restores wishlist too.
+**Import:**
+- Native file picker
+- Ask user: **"Merge with current collection"** or **"Replace current collection"**
+  - Merge: entries with same `cardCode + location` → update qty; new entries → add
+  - Replace: clear all existing entries, then load from backup
+- If backup contains unknown card codes (not in current cards.json): **import anyway, show warning** — "X cards not found in current DB — they will still be saved."
+- Wishlist included in full backup; import also restores wishlist (same Merge/Replace choice)
 
-**Auto-update DB** — implement the hybrid SHA strategy from Data & Caching: silently check GitHub commit SHA on startup, auto-refresh if SHA differs from cache. Show non-blocking "Checking for updates…" indicator.
+**3. Performance Measurement** *(replace estimates with real data)*
 
-**Polish / Bug Fixes:**
-- Bug: `moveQtyInput.max` in the move section doesn't update when qty is changed via `[+]`/`[−]` buttons in the same preview pane
-- Debt: Grouped view uses full DOM re-render on every filter change (not virtualized); acceptable for typical collections but add a note if collection exceeds ~500 entries
-- Refactor: Extract `buildEditSection` from `collection-tab.ts` (410 lines → ~295 after extraction to `collection-edit.ts`)
+Use DevTools Performance panel to measure actual numbers:
+- Filter time (target: < 100ms)
+- Collection load from IndexedDB
+- Grid render time
+- Virtual list scroll performance
+
+Update README performance table and LEARN.md with real measured values.
+
+**4. Polish / Bug Fixes:**
+- ✅ Bug: `moveQtyInput.max` not synced — **fixed**
+- Debt: Grouped view uses full DOM re-render on every filter change (not virtualized); acceptable for typical collections, may lag at 500+ entries
+- Refactor: Extract `buildEditSection` from `collection-tab.ts` (412 lines → ~295 after extraction to `collection-edit.ts`)
 
 ### Phase 4 — Distribution
 
@@ -260,9 +288,11 @@ Export/import uses Tauri Rust commands (`#[tauri::command]` in `lib.rs`) for nat
 - Android APK (Tauri mobile target; timeline TBD)
 - **CSP must be properly configured before any public release** (currently disabled in `tauri.conf.json`)
 
-### Phase 5+ — Deck Builder (maybe, not in scope now)
+### Phase 5+ — Future Features (maybe, not in scope now)
 
-If added later: Vanguard deck validation (max 4 copies per card name, 50 cards total), deck export as text list.
+- **Deck Builder**: Vanguard deck validation (max 4 copies per card name, 50 cards total), deck export as text list
+- **Bulk edit**: Select multiple collection entries → change location or delete in bulk
+- **Manual dark/light mode toggle**: Currently follows OS. Add in-app toggle (persist to localStorage)
 
 ---
 
@@ -315,14 +345,19 @@ Also provide a **manual "Force Refresh" button** in the UI for the user to trigg
 | No error recovery UI | `main.ts` | Errors shown as inline text; consider toast/modal when collection features land |
 | Rust backend mostly unused | `src-tauri/src/lib.rs` | Only `tauri-plugin-opener` registered; file I/O for Phase 3.5 export needs Rust commands |
 | Grouped view not virtualized | `collection-grouped.ts` | Full DOM re-render on each filter change; fine for typical collections, may lag at 500+ entries |
-| Move qty input max not synced | `collection-tab.ts` | `moveQtyInput.max` set at preview open time; not updated when qty changes via `[+]`/`[−]` buttons |
+| ~~Move qty input max not synced~~ | ~~`collection-tab.ts`~~ | ~~Fixed: hoisted `moveQtyInput` declaration so +/− handlers can sync `max`~~ |
 | Performance targets unverified | All | Targets in this doc are estimates; not yet measured with DevTools profiling |
 
 ---
 
 ## Git Workflow
 
-Before every commit, update `README.md` to reflect the current state — phase status, new features, module structure changes. Commit the README in the same commit or immediately after.
+Before every commit, update all three docs in the same commit:
+1. `README.md` — phase status, new features, module structure changes
+2. `LEARN.md` — add or update any Decision Log entry, Deep Dive, or "What I Would Do Differently" that reflects work done in this commit
+3. `REFLECTION.md` — if any bug was fixed or lesson learned, document it here
+
+After every commit (including push), ask: **"Apakah kita perlu review CLAUDE.md untuk arah pengembangan selanjutnya?"**
 
 ---
 
