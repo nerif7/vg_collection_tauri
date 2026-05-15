@@ -17,6 +17,7 @@ not just *what* the code does, but *why* it was built this way.
    - [Why Virtual Rendering?](#34-why-virtual-rendering)
    - [Why one file, one responsibility?](#35-why-one-file-one-responsibility)
    - [Why TypeScript strict mode?](#36-why-typescript-strict-mode)
+   - [Why SHA-based auto-update?](#37-why-sha-based-auto-update-instead-of-just-a-timer)
 4. [Deep Dives](#4-deep-dives)
    - [IndexedDB: How It Really Works](#41-indexeddb-how-it-really-works)
    - [VirtualList Algorithm](#42-virtuallist-algorithm)
@@ -277,6 +278,45 @@ function getCardName(card: Card | null): string {
 
 Every runtime bug prevented by the type checker is a bug that never reaches the user.
 For a personal tool this matters less, but for portfolio demonstration it shows discipline.
+
+---
+
+### 3.7 Why SHA-based auto-update instead of just a timer?
+
+The naive update strategy is: re-fetch `cards.json` every 7 days. This works, but has
+a problem — if the database is updated on day 2, users wait 5 more days to get the new
+cards. If updated on day 6, they wait 1 day. The staleness window averages 3.5 days.
+
+The better strategy: on every startup, ask GitHub *"has cards.json changed since I last
+fetched?"* — using the GitHub Commits API. This returns the latest commit SHA in ~50ms
+(no big download). If the SHA matches the cached SHA, skip. If different, fetch the new
+`cards.json` in the background.
+
+```typescript
+async function checkForUpdates(meta: CacheMeta): Promise<void> {
+  showUpdateSpinner(true);
+  try {
+    const latestSha = await fetchLatestCommitSha();   // ~50ms, just metadata
+    if (!latestSha || latestSha === meta.lastCommitSha) return; // up to date
+    await doFetchAndCache();                           // ~854ms, re-fetch full data
+    showToast(`Cards updated — ${allCards.length.toLocaleString("id-ID")} cards loaded.`);
+  } finally {
+    showUpdateSpinner(false);
+  }
+}
+```
+
+**Why non-blocking?** The `checkForUpdates()` call is fire-and-forget — the UI loads
+from cache instantly (~33ms) and the SHA check runs in parallel. The user sees the app
+working immediately; if an update arrives, a toast appears without any page reload.
+
+**Rate limit handling:** The GitHub API allows 60 unauthenticated requests per hour. A
+`fetchLatestCommitSha()` that returns `null` (due to rate limiting or network error) is
+treated as "up to date" — the app falls back to the 7-day staleness threshold. No user-
+visible error for a background check failure.
+
+**Trade-off:** This requires a network round-trip on every startup. For offline use, the
+SHA check fails silently and cached data is used as-is. Acceptable for a personal tool.
 
 ---
 

@@ -46,8 +46,9 @@ let collectionQtyMap = new Map<string, number>();
 let tabNav: TabNav | null = null;
 
 // ── DOM refs (Browse tab) ─────────────────────────────────────────────────────
-const refreshBtn    = document.querySelector<HTMLButtonElement>("#refreshBtn")!;
-const clearBtn      = document.querySelector<HTMLButtonElement>("#clearBtn")!;
+const refreshBtn      = document.querySelector<HTMLButtonElement>("#refreshBtn")!;
+const clearBtn        = document.querySelector<HTMLButtonElement>("#clearBtn")!;
+const updateSpinnerEl = document.querySelector<HTMLElement>("#updateSpinner")!;
 const statusEl      = document.querySelector<HTMLDivElement>("#status")!;
 const statsEl       = document.querySelector<HTMLDivElement>("#stats")!;
 const cacheInfoEl   = document.querySelector<HTMLDivElement>("#cacheInfo")!;
@@ -84,6 +85,36 @@ async function loadFromCache(): Promise<{ cards: Card[]; meta: CacheMeta } | nul
   const [cachedCards, meta] = await Promise.all([loadCards(), loadMeta()]);
   if (!cachedCards || cachedCards.length === 0 || !meta) return null;
   return { cards: cachedCards, meta };
+}
+
+// ── Update check + toast ──────────────────────────────────────────────────────
+
+function showUpdateSpinner(visible: boolean): void {
+  updateSpinnerEl.hidden = !visible;
+}
+
+function showToast(msg: string): void {
+  const toast = document.createElement("div");
+  toast.className = "toast";
+  toast.textContent = msg;
+  document.body.appendChild(toast);
+  requestAnimationFrame(() => toast.classList.add("toast--visible"));
+  setTimeout(() => {
+    toast.classList.remove("toast--visible");
+    setTimeout(() => toast.remove(), 250);
+  }, 3500);
+}
+
+async function checkForUpdates(meta: CacheMeta): Promise<void> {
+  showUpdateSpinner(true);
+  try {
+    const latestSha = await fetchLatestCommitSha();
+    if (!latestSha || latestSha === meta.lastCommitSha) return;
+    await doFetchAndCache();
+    showToast(`Cards updated — ${allCards.length.toLocaleString("id-ID")} cards loaded.`);
+  } finally {
+    showUpdateSpinner(false);
+  }
 }
 
 // ── Browse UI helpers ─────────────────────────────────────────────────────────
@@ -252,6 +283,9 @@ async function handleLoad() {
       renderStats({ count: allCards.length, sizeBytes: cached.meta.sizeBytes, loadFromCacheMs: loadTime });
       renderCacheInfo(cached.meta);
       updateListMeta(visibleCards.length, allCards.length, readFilterState(filterRefs!));
+
+      // Non-blocking SHA check — auto-refresh if cards.json has changed
+      checkForUpdates(cached.meta).catch(() => {});
     } else {
       await doFetchAndCache();
     }
