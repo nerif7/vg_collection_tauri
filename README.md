@@ -50,8 +50,8 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Auto-update: startup SHA check vs GitHub → auto-refresh + toast if outdated; skip if rate-limited
 - ✅ Fix: full move (move all copies) now merges with existing destination entry instead of creating duplicate
 - ✅ Fix: `deduplicateCollection()` runs on startup to clean up any existing duplicates; Add button disabled during async
-- 📋 Export: full backup JSON (collection + wishlist + meta) via Tauri native file dialog; CSV, HTML also planned
-- 📋 Import: Merge or Replace dialog; warns about unknown card codes
+- ✅ Export: full backup JSON `{ collection, wishlist, meta }` via Tauri native save dialog
+- ✅ Import: native open dialog → Merge or Replace dialog; warns about unknown card codes; restores wishlist
 - 📋 Performance: measure real numbers (filter time, grid render) with DevTools — replace estimates in README
 - 📋 Refactor: extract `buildEditSection` from `collection-tab.ts` → `collection-edit.ts`
 
@@ -136,6 +136,7 @@ vg_collection_tauri/
 │   ├── wishlist-tab.ts     # Wishlist tab view
 │   ├── location-manager.ts # Location management modal
 │   ├── confirm-dialog.ts   # Custom centered confirm dialog
+│   ├── export-import.ts    # Export/Import backup logic (Tauri invoke + import dialog)
 │   └── styles.css          # Light/dark theme
 ├── src-tauri/              # Rust backend
 │   ├── src/

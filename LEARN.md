@@ -320,6 +320,49 @@ SHA check fails silently and cached data is used as-is. Acceptable for a persona
 
 ---
 
+### 3.8 Why Rust-side file dialog instead of TypeScript plugin API?
+
+For Export/Import, two approaches were available in Tauri 2.x:
+
+**Option A — TypeScript plugin API:**
+```typescript
+import { save } from "@tauri-apps/plugin-dialog";
+import { writeTextFile } from "@tauri-apps/plugin-fs";
+const path = await save({ filters: [{ name: "JSON", extensions: ["json"] }] });
+if (path) await writeTextFile(path, content);
+```
+
+**Option B — Rust commands (chosen):**
+```rust
+#[tauri::command]
+async fn export_backup(app: tauri::AppHandle, content: String) -> Result<bool, String> {
+    let path = app.dialog().file()
+        .add_filter("JSON Backup", &["json"])
+        .set_file_name("vg_collection_backup.json")
+        .blocking_save_file();
+    let Some(path) = path else { return Ok(false) };
+    let p = path.into_path().map_err(|e| e.to_string())?;
+    std::fs::write(p, content).map_err(|e| e.to_string())?;
+    Ok(true)
+}
+```
+
+**Why Option B?**
+- Option A requires configuring `tauri-plugin-fs` scope permissions — specifying which
+  directories the webview is allowed to write to. For user-chosen save paths (which can
+  be anywhere), this requires a broad wildcard scope, which is a security trade-off.
+- Option B lets Rust handle both the dialog and file I/O. `std::fs` has no scope
+  restrictions — it's the Rust process, not the webview, doing the file write. Only
+  `tauri-plugin-dialog` is needed (no `tauri-plugin-fs`).
+- Simpler capability config: `"dialog:default"` only, no fs scope declarations.
+
+**Key discovery:** `FilePath` (returned by `blocking_save_file`) is an enum from
+`tauri-plugin-fs` that wraps either a `PathBuf` (desktop) or a URL (mobile/Android
+content URIs). Use `path.into_path()` to extract the `PathBuf`, which always succeeds
+on desktop.
+
+---
+
 ## 4. Deep Dives
 
 ### 4.1 IndexedDB: How It Really Works
