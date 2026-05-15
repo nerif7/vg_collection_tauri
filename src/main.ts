@@ -27,6 +27,7 @@ import {
   initWishlistTab, loadWishlistTab,
   closeWishlistPreview, refreshWishlistTab,
 } from "./wishlist-tab.ts";
+import { exportBackup, importBackup, type ImportResult } from "./export-import.ts";
 import "./styles.css";
 
 const DB_URL     = "https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/cards.json";
@@ -388,12 +389,29 @@ async function init() {
     },
   });
 
-  // Export/Import buttons (stub — Tauri commands wired in later)
-  document.getElementById("exportBtn")?.addEventListener("click", () => {
-    alert("Export: coming soon");
+  document.getElementById("exportBtn")?.addEventListener("click", async () => {
+    const result = await exportBackup();
+    if (result === "saved") showToast("Collection exported successfully.");
+    else if (result === "browser") alert("Export requires the desktop app.");
   });
-  document.getElementById("importBtn")?.addEventListener("click", () => {
-    alert("Import: coming soon");
+
+  document.getElementById("importBtn")?.addEventListener("click", async () => {
+    const cardSet = new Set(allCards.map((c) => c.enCardNo));
+    const result = await importBackup(cardSet);
+    if (result === "browser") {
+      alert("Import requires the desktop app.");
+    } else if (result === "invalid") {
+      alert("Import failed: invalid or unrecognised backup file.");
+    } else if (typeof result === "object") {
+      await Promise.all([loadCollectionTab(), loadWishlistTab(), refreshCollectionOverlay()]);
+      const unknownMsg = result.unknownCount > 0
+        ? ` (${result.unknownCount} unknown codes kept)`
+        : "";
+      showToast(
+        `Imported ${(result as ImportResult).collectionCount} collection + ` +
+        `${(result as ImportResult).wishlistCount} wishlist entries.${unknownMsg}`
+      );
+    }
   });
 
   refreshBtn.addEventListener("click", handleForceRefresh);

@@ -120,6 +120,14 @@ export async function getCollectionQtyMap(): Promise<Map<string, number>> {
   return map;
 }
 
+export function clearAllCollectionEntries(): Promise<undefined> {
+  return tx<undefined>(STORE_COLLECTION, "readwrite", (s) => s.clear());
+}
+
+export function clearAllWishlistEntries(): Promise<undefined> {
+  return tx<undefined>(STORE_WISHLIST, "readwrite", (s) => s.clear());
+}
+
 /** Returns all location names from the locations store, sorted A–Z. */
 export async function getAllLocations(): Promise<string[]> {
   const db = await openDB();
