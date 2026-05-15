@@ -75,11 +75,39 @@ export function mergeOrAdd(cardCode: string, location: string, qty: number): Pro
 export async function movePartial(entry: CollectionEntry, toLocation: string, qty: number): Promise<void> {
   const clampedQty = Math.min(qty, entry.quantity);
   if (clampedQty >= entry.quantity) {
-    await updateCollectionEntry({ ...entry, location: toLocation });
+    // Always merge into destination first, then remove source —
+    // a simple location rename would create a duplicate if destination already has an entry.
+    await mergeOrAdd(entry.cardCode, toLocation, entry.quantity);
+    await removeCollectionEntry(entry.id!);
   } else {
     await updateCollectionEntry({ ...entry, quantity: entry.quantity - clampedQty });
     await mergeOrAdd(entry.cardCode, toLocation, clampedQty);
   }
+}
+
+/** Merges entries that share the same cardCode+location. Returns number of groups merged. */
+export async function deduplicateCollection(): Promise<number> {
+  const entries = await getAllCollectionEntries();
+  const groups = new Map<string, CollectionEntry[]>();
+
+  for (const e of entries) {
+    const key = `${e.cardCode}\0${e.location}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(e);
+  }
+
+  let mergedCount = 0;
+  for (const group of groups.values()) {
+    if (group.length <= 1) continue;
+    group.sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
+    const [keep, ...dupes] = group;
+    const totalQty = group.reduce((sum, e) => sum + e.quantity, 0);
+    await updateCollectionEntry({ ...keep, quantity: totalQty });
+    for (const e of dupes) await removeCollectionEntry(e.id!);
+    mergedCount++;
+  }
+
+  return mergedCount;
 }
 
 /** Returns Map<cardCode, totalQty> across all entries — used for Browse row badges. */

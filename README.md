@@ -48,6 +48,8 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 **Phase 3.5 — Export/Import + Auto-update + Polish (📋 Next)**
 - ✅ Fix: `moveQtyInput.max` now syncs when qty is changed via +/− buttons
 - ✅ Auto-update: startup SHA check vs GitHub → auto-refresh + toast if outdated; skip if rate-limited
+- ✅ Fix: full move (move all copies) now merges with existing destination entry instead of creating duplicate
+- ✅ Fix: `deduplicateCollection()` runs on startup to clean up any existing duplicates; Add button disabled during async
 - 📋 Export: full backup JSON (collection + wishlist + meta) via Tauri native file dialog; CSV, HTML also planned
 - 📋 Import: Merge or Replace dialog; warns about unknown card codes
 - 📋 Performance: measure real numbers (filter time, grid render) with DevTools — replace estimates in README

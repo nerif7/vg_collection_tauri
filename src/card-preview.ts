@@ -152,13 +152,18 @@ export class CardPreview {
       }
 
       addBtn.addEventListener("click", async () => {
-        const qty = Math.max(1, parseInt(qtyInput.value, 10) || 1);
-        const loc = locSelect.value;
-        await mergeOrAdd(card.enCardNo, loc, qty);
-        qtyInput.value = "1";
-        this.callbacks?.onCollectionChanged();
-        const updated = await getCollectionByCardCode(card.enCardNo);
-        renderOwned(updated);
+        addBtn.disabled = true;
+        try {
+          const qty = Math.max(1, parseInt(qtyInput.value, 10) || 1);
+          const loc = locSelect.value;
+          await mergeOrAdd(card.enCardNo, loc, qty);
+          qtyInput.value = "1";
+          this.callbacks?.onCollectionChanged();
+          const updated = await getCollectionByCardCode(card.enCardNo);
+          renderOwned(updated);
+        } finally {
+          addBtn.disabled = false;
+        }
       });
 
       formRow.append(qtyInput, locSelect, addBtn);

@@ -6,7 +6,7 @@ import {
   formatRelativeTime, isCacheStale,
   type CacheMeta,
 } from "./cache.ts";
-import { getCollectionQtyMap } from "./collection-db.ts";
+import { getCollectionQtyMap, deduplicateCollection } from "./collection-db.ts";
 import { VirtualList } from "./virtual-list.ts";
 import { buildCardRow } from "./card-row.ts";
 import { applyFilters, extractUniqueOptions, hasActiveFilter, sortCards, type FilterState, type BrowseSortKey } from "./filters.ts";
@@ -293,6 +293,8 @@ async function handleLoad() {
     // After cards are loaded, init collection + wishlist tabs
     initCollectionTab(allCards);
     initWishlistTab(allCards);
+    const mergedGroups = await deduplicateCollection();
+    if (mergedGroups > 0) showToast(`Cleaned up ${mergedGroups} duplicate collection ${mergedGroups === 1 ? "entry" : "entries"}.`);
     await Promise.all([loadCollectionTab(), loadWishlistTab(), refreshCollectionOverlay()]);
 
   } catch (err) {

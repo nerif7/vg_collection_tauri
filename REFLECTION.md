@@ -86,6 +86,51 @@ block — the outer closure can't see it.
 
 ---
 
+### Bug 4: Full move created a duplicate entry instead of merging ✅ Fixed
+
+**What happened:** A card with 3 copies in location A, after moving them one-by-one to B:
+- Move 1 → 2 in A, 1 in B ✓
+- Move 1 → 1 in A, 2 in B ✓
+- Move last 1 → should be 3 in B, but instead: 1 in B (old) + 1 in B (new) — duplicate
+
+**Root cause:** `movePartial` had two code paths:
+```typescript
+if (clampedQty >= entry.quantity) {
+  // BUG: just renames the source entry's location field
+  await updateCollectionEntry({ ...entry, location: toLocation });
+} else {
+  await updateCollectionEntry({ ...entry, quantity: entry.quantity - clampedQty });
+  await mergeOrAdd(entry.cardCode, toLocation, clampedQty);
+}
+```
+
+The "full move" path (`>=`) just changed the `location` field of the existing entry —
+it never checked if the destination already had an entry. So if destination already had
+copies, you ended up with two separate entries at the same location.
+
+The "partial move" path (`else`) correctly used `mergeOrAdd`, which checks for existing
+entries at the destination.
+
+**The fix:** Full move now follows the same pattern as partial move — merge into
+destination, then delete the source:
+```typescript
+if (clampedQty >= entry.quantity) {
+  await mergeOrAdd(entry.cardCode, toLocation, entry.quantity);
+  await removeCollectionEntry(entry.id!);
+}
+```
+
+**Lesson:** When you have two code paths that solve "similar but not identical" cases,
+make sure both paths are logically consistent. The partial-move path used `mergeOrAdd`
+correctly; the full-move path took a shortcut that skipped the merge check. The shortcut
+only works when the destination is guaranteed empty — which it isn't.
+
+**Also added:** `deduplicateCollection()` — runs silently on every app startup to merge
+any existing same-cardCode+location duplicates, plus disabled the Add button during async
+to prevent double-click race conditions.
+
+---
+
 ## Process Insights
 
 ### The multi-question approach before implementing
