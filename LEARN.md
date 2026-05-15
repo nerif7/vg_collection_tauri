@@ -320,6 +320,52 @@ SHA check fails silently and cached data is used as-is. Acceptable for a persona
 
 ---
 
+### 3.10 Extracting a DOM builder with callbacks instead of module state access
+
+`buildEditSection` in `collection-tab.ts` grew to 122 lines. It built the qty/move/remove
+edit UI for the collection preview pane. Extracting it to `collection-edit.ts` required
+deciding how it communicates back to its caller.
+
+**The problem:** the function's event handlers needed to:
+- Update `allEntries` (module-level state in `collection-tab.ts`)
+- Call `applyFilters()`, `renderStats()`, `closePreview()` (private functions)
+- Trigger `loadCollectionTab()` after a move
+
+**Three options:**
+
+**Option A — Pass all state by reference:** Pass `allEntries`, `virtualList`, etc. as
+arguments. Fragile — JS passes arrays by reference but reassigning (`allEntries = filtered`)
+wouldn't be seen by the caller. Only mutations would propagate, not reassignments.
+
+**Option B — Export everything from collection-tab.ts:** Make private functions public and
+import them in `collection-edit.ts`. Creates tight coupling and circular dependency risk.
+
+**Option C — Callbacks (chosen):**
+```typescript
+export interface EditCallbacks {
+  onQtyChanged: (updatedEntry: CollectionEntry) => void;
+  onRemoved: (id: number) => void;
+  onMoved: (entry: CollectionEntry, toLocation: string, qty: number) => Promise<void>;
+}
+```
+
+`collection-edit.ts` handles: DOM building + DB writes (`updateCollectionEntry`,
+`removeCollectionEntry`) + `showConfirm` dialogs.
+
+`collection-tab.ts` supplies callbacks that close over module state:
+```typescript
+buildEditSection(entry, locations, {
+  onQtyChanged: (updated) => { syncEntryInList(updated); renderStats(); onCollectionChanged?.(); },
+  onRemoved:    (id)      => { allEntries = allEntries.filter(e => e.id !== id); applyFilters(); ... },
+  onMoved:      async (e, loc, qty) => { await movePartial(e, loc, qty); await loadCollectionTab(); ... },
+})
+```
+
+**Result:** `collection-edit.ts` has zero knowledge of collection-tab internals.
+`collection-tab.ts` drops from 493 → ~375 lines. Dependencies flow only one direction.
+
+---
+
 ### 3.9 Cross-tab shared state: callback pattern vs. direct import
 
 The `collectionQtyMap` in `main.ts` is derived state — a `Map<cardCode, totalQty>`

@@ -183,13 +183,19 @@ minutes asking instead of 45 minutes implementing the wrong thing.
 
 ### Scope creep is easiest to prevent at architecture time
 
-The `collection-tab.ts` file grew to 410 lines because each feature addition felt
+The `collection-tab.ts` file grew to 493 lines because each feature addition felt
 incremental: "just add this small thing." But small things compound. The 200-line limit
 in CLAUDE.md exists for exactly this reason — it's a forcing function to extract focused
 modules before the file becomes a monolith.
 
+Extracting `buildEditSection` to `collection-edit.ts` (122 lines) brought the file down
+to ~375 lines. The key design decision: pass callbacks from the caller rather than
+importing private state — keeping dependencies one-directional and avoiding circular imports.
+
 **Lesson:** A 200-line file that needs extraction is much easier to refactor than a
-500-line file. The longer you wait, the more the code gets entangled.
+500-line file. The longer you wait, the more the code gets entangled. When extracting a
+function that accesses module-level state, the callback pattern is usually the cleanest
+solution — it avoids both circular imports and fragile reference-passing.
 
 ---
 

@@ -54,7 +54,7 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Import: native open dialog → Merge or Replace dialog; warns about unknown card codes; restores wishlist
 - ✅ Fix: Browse tab ×N badges now update in real-time when Collection tab mutations happen (remove, qty change, move)
 - 📋 Performance: measure real numbers (filter time, grid render) with DevTools — replace estimates in README
-- 📋 Refactor: extract `buildEditSection` from `collection-tab.ts` → `collection-edit.ts`
+- ✅ Refactor: extracted `buildEditSection` from `collection-tab.ts` → `collection-edit.ts` (callbacks pattern)
 
 **Phase 4 — Distribution (📋 Planned)**
 - 📋 Windows installer (.msi)
@@ -134,6 +134,7 @@ vg_collection_tauri/
 │   ├── collection-grouped.ts # Grouped view renderer (collapsible location groups)
 │   ├── card-preview.ts     # Preview pane + lightbox (Browse tab)
 │   ├── collection-tab.ts   # Collection tab view + edit controls
+│   ├── collection-edit.ts  # Edit section DOM builder (qty/move/remove controls)
 │   ├── wishlist-tab.ts     # Wishlist tab view
 │   ├── location-manager.ts # Location management modal
 │   ├── confirm-dialog.ts   # Custom centered confirm dialog
