@@ -292,7 +292,7 @@ async function handleLoad() {
     }
 
     // After cards are loaded, init collection + wishlist tabs
-    initCollectionTab(allCards);
+    initCollectionTab(allCards, () => { refreshCollectionOverlay().catch(() => {}); });
     initWishlistTab(allCards);
     const mergedGroups = await deduplicateCollection();
     if (mergedGroups > 0) showToast(`Cleaned up ${mergedGroups} duplicate collection ${mergedGroups === 1 ? "entry" : "entries"}.`);

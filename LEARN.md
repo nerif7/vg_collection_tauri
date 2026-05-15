@@ -320,6 +320,45 @@ SHA check fails silently and cached data is used as-is. Acceptable for a persona
 
 ---
 
+### 3.9 Cross-tab shared state: callback pattern vs. direct import
+
+The `collectionQtyMap` in `main.ts` is derived state — a `Map<cardCode, totalQty>`
+built from the collection store and used by Browse tab rows to render the ×N badge.
+
+**The problem:** `collection-tab.ts` mutates the collection store (remove, qty change,
+move) but `main.ts` doesn't know when to re-derive the map. Two solutions exist:
+
+**Option A — Direct import (rejected):**
+```typescript
+// collection-tab.ts
+import { refreshCollectionOverlay } from "./main.ts"; // circular dependency!
+```
+`main.ts` imports `collection-tab.ts`; `collection-tab.ts` importing `main.ts` creates
+a circular module graph. TypeScript allows circular imports in some cases, but they are
+fragile and make dependency flow hard to reason about.
+
+**Option B — Callback at init time (chosen):**
+```typescript
+// main.ts
+initCollectionTab(allCards, () => { refreshCollectionOverlay().catch(() => {}); });
+
+// collection-tab.ts
+let onCollectionChanged: (() => void) | null = null;
+export function initCollectionTab(cards: Card[], onChange?: () => void): void {
+  onCollectionChanged = onChange ?? null;
+  // ...
+}
+// In every mutation handler:
+onCollectionChanged?.();
+```
+
+**Why Option B?** The callback is passed *down* from parent (`main.ts`) to child
+(`collection-tab.ts`). Dependency only flows one direction: `main.ts → collection-tab.ts`.
+`collection-tab.ts` doesn't need to know what `main.ts` does with the notification — it
+just fires the callback. This is the same pattern React uses for `onChange` props.
+
+---
+
 ### 3.8 Why Rust-side file dialog instead of TypeScript plugin API?
 
 For Export/Import, two approaches were available in Tauri 2.x:

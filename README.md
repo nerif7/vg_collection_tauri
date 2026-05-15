@@ -52,6 +52,7 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Fix: `deduplicateCollection()` runs on startup to clean up any existing duplicates; Add button disabled during async
 - ✅ Export: full backup JSON `{ collection, wishlist, meta }` via Tauri native save dialog
 - ✅ Import: native open dialog → Merge or Replace dialog; warns about unknown card codes; restores wishlist
+- ✅ Fix: Browse tab ×N badges now update in real-time when Collection tab mutations happen (remove, qty change, move)
 - 📋 Performance: measure real numbers (filter time, grid render) with DevTools — replace estimates in README
 - 📋 Refactor: extract `buildEditSection` from `collection-tab.ts` → `collection-edit.ts`
 

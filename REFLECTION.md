@@ -131,6 +131,40 @@ to prevent double-click race conditions.
 
 ---
 
+### Bug 5: Browse tab ×N badges not updated after Collection tab mutations ✅ Fixed
+
+**What happened:** After removing a card from the Collection tab (or changing its
+quantity), the Browse tab still showed the old ×N badge on that card's row.
+
+**Root cause:** `collectionQtyMap` in `main.ts` is the shared lookup used by
+`buildCardRow()` and `buildCardTile()` to render the badge. It was only refreshed via
+the `onCollectionChanged` callback from the Browse preview pane — but Collection tab
+mutations (remove entry, qty +/−, move) never notified `main.ts` that the map was stale.
+
+**The fix:** Added an `onChange?: () => void` callback parameter to `initCollectionTab`.
+Every mutation handler in `collection-tab.ts` calls `onCollectionChanged?.()` after
+completing. In `main.ts`, the callback is wired to `refreshCollectionOverlay()`:
+
+```typescript
+// main.ts
+initCollectionTab(allCards, () => { refreshCollectionOverlay().catch(() => {}); });
+```
+
+```typescript
+// collection-tab.ts — every mutation path:
+await removeCollectionEntry(entry.id!);
+onCollectionChanged?.();          // notify main.ts to re-fetch collectionQtyMap
+await loadCollectionTab();        // refresh the collection list itself
+```
+
+**Lesson:** When two tabs share derived state (the qty map), mutations in either tab
+must trigger a refresh of the shared state — not just a refresh of the local view.
+A callback passed down at init time is a clean way to notify the orchestrator
+(`main.ts`) without creating a direct import dependency from `collection-tab.ts`
+back to `main.ts` (which would be a circular dependency).
+
+---
+
 ## Process Insights
 
 ### The multi-question approach before implementing

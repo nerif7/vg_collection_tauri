@@ -47,10 +47,13 @@ let typeFilterEl:   HTMLSelectElement;
 let viewToggleBtn:  HTMLButtonElement;
 let groupToggleBtn: HTMLButtonElement;
 
+let onCollectionChanged: (() => void) | null = null;
+
 // ── Init ───────────────────────────────────────────────────────────────────────
 
-export function initCollectionTab(cards: Card[]): void {
+export function initCollectionTab(cards: Card[], onChange?: () => void): void {
   cardMap = new Map(cards.map((c) => [c.enCardNo, c]));
+  onCollectionChanged = onChange ?? null;
 
   sortEl         = document.getElementById("collectionSort")       as HTMLSelectElement;
   locFilterEl    = document.getElementById("collectionLocFilter")   as HTMLSelectElement;
@@ -359,6 +362,7 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
     entry.quantity = currentQty;
     syncEntryInList(entry);
     renderStats();
+    onCollectionChanged?.();
   });
 
   minusBtn.addEventListener("click", async () => {
@@ -367,6 +371,7 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
       await removeCollectionEntry(entry.id!);
       allEntries = allEntries.filter((e) => e.id !== entry.id);
       applyFilters(); renderStats(); closePreview();
+      onCollectionChanged?.();
       return;
     }
     currentQty--;
@@ -376,6 +381,7 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
     entry.quantity = currentQty;
     syncEntryInList(entry);
     renderStats();
+    onCollectionChanged?.();
   });
 
   qtyRow.append(qtyLabel, minusBtn, qtyDisplay, plusBtn);
@@ -423,6 +429,7 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
       const isFullMove = qty >= currentQty;
       await movePartial({ ...entry, quantity: currentQty }, toLocation, qty);
       await loadCollectionTab();
+      onCollectionChanged?.();
       if (isFullMove) {
         closePreview();
       } else {
@@ -445,6 +452,7 @@ function buildEditSection(entry: CollectionEntry, locations: string[]): HTMLElem
     await removeCollectionEntry(entry.id!);
     allEntries = allEntries.filter((e) => e.id !== entry.id);
     applyFilters(); renderStats(); closePreview();
+    onCollectionChanged?.();
   });
 
   section.append(qtyRow, moveSection, removeBtn);
