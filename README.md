@@ -45,11 +45,15 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Grid view toggle — all three tabs support list ↔ grid (virtualized, ~160px tiles, ×N badge)
 - ✅ Grouped view — Collection tab can toggle flat list ↔ collapsible location groups (in-group sort: grade → name)
 
-**Phase 4 — Distribution (📋 Planned)**
-- 📋 Export: JSON, CSV, printable HTML, full backup
+**Phase 3.5 — Export/Import + Auto-update + Polish (📋 Next)**
+- 📋 Export: JSON, CSV, printable HTML, full backup (Tauri native file dialog)
 - 📋 Import: JSON backup with merge or replace dialog
+- 📋 Auto-update: background SHA check on startup, non-blocking "Checking for updates…" indicator
+- 📋 Polish: fix move qty input sync, extract `collection-edit.ts`, performance profiling
+
+**Phase 4 — Distribution (📋 Planned)**
 - 📋 Windows installer (.msi)
-- 📋 Android APK build
+- 📋 Android APK build (timeline TBD)
 
 ## 📊 Performance
 
@@ -133,6 +137,16 @@ vg_collection_tauri/
 ├── package.json
 └── tsconfig.json
 ```
+
+## 📚 Learning Documentation
+
+This project is also a portfolio and learning exercise. Two companion documents explain
+the reasoning behind every technical decision:
+
+- **[LEARN.md](LEARN.md)** — Architecture overview, decision log, and full code walkthroughs
+  for IndexedDB, VirtualList/Grid algorithm, TypeScript module design, and Tauri internals
+- **[REFLECTION.md](REFLECTION.md)** — Bugs introduced, lessons learned, and honest
+  retrospective on what I'd do differently
 
 ## 📝 Catatan
 

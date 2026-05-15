@@ -4,11 +4,11 @@
 
 A **Cardfight!! Vanguard** card database browser and personal collection tracker built with Tauri 2 (Rust + WebView). This is a rewrite of an older Electron app.
 
-**Core motivation:** The old Electron app could not be used on mobile — users couldn't check their collection at card shops. The Android APK target is the most important long-term goal of this rewrite.
+**Core motivation:** The old Electron app could not be used on mobile — users couldn't check their collection at card shops. Android APK is a long-term possibility (timeline uncertain; Windows distribution comes first).
 
 - **Primary user:** Personal use first; potentially shared with friends later
 - **UI language:** English
-- **Target platforms:** Windows (.msi) and Android APK
+- **Target platforms:** Windows (.msi) primary; Android APK TBD
 
 ---
 
@@ -29,21 +29,25 @@ A **Cardfight!! Vanguard** card database browser and personal collection tracker
 
 ```
 src/
-├── main.ts             # App orchestration, tab routing, global state
-├── cache.ts            # IndexedDB abstraction (card DB cache)
-├── collection-db.ts    # IndexedDB CRUD for collection + wishlist stores
-├── filters.ts          # Pure filter logic — no DOM, no side effects, testable
-├── filter-bar.ts       # Filter UI wiring only (reads filters.ts, writes DOM)
-├── virtual-list.ts     # Generic virtualized list renderer (RAF-throttled)
-├── card-row.ts         # Card row DOM builder (Browse view)
-├── collection-row.ts   # Collection row DOM builder
-├── card-preview.ts     # Preview pane + lightbox (shared across tabs)
-├── tab-nav.ts          # Tab navigation wiring
-├── collection-tab.ts   # Collection tab view (stats bar + list + search)
-├── wishlist-tab.ts     # Wishlist tab view
-├── export.ts           # Export logic (JSON, CSV, printable HTML, full backup)
-├── types.ts            # All TypeScript interfaces and types
-└── styles.css          # Light/dark theme styling
+├── main.ts               # App orchestration, tab routing, global state
+├── cache.ts              # IndexedDB abstraction (card DB cache)
+├── collection-db.ts      # IndexedDB CRUD for collection + wishlist stores
+├── filters.ts            # Pure filter logic — no DOM, no side effects, testable
+├── filter-bar.ts         # Filter UI wiring only (reads filters.ts, writes DOM)
+├── virtual-list.ts       # Generic virtualized list renderer (RAF-throttled)
+├── virtual-grid.ts       # Generic virtualized grid renderer (ResizeObserver, dynamic cols)
+├── card-row.ts           # Card row DOM builder (Browse list view)
+├── card-tile.ts          # Card tile DOM builder (grid view — all tabs)
+├── collection-row.ts     # Collection row DOM builder
+├── collection-grouped.ts # Grouped view renderer (collapsible location groups)
+├── card-preview.ts       # Preview pane + lightbox (Browse tab)
+├── tab-nav.ts            # Tab navigation wiring
+├── collection-tab.ts     # Collection tab — list/grid/grouped + edit controls
+├── wishlist-tab.ts       # Wishlist tab view
+├── location-manager.ts   # Manage Locations modal
+├── confirm-dialog.ts     # Custom centered confirm dialog (replaces native popup)
+├── types.ts              # All TypeScript interfaces and types
+└── styles.css            # Light/dark theme styling
 
 src-tauri/src/
 ├── lib.rs              # Tauri app builder, plugin registration, file I/O commands
@@ -99,7 +103,9 @@ Keep files under ~200 lines where practical. If a file grows beyond that, extrac
 - Selected row highlight (inset left border)
 - "Add to Collection" button stub (wired in Phase 3)
 
-### Phase 3 — Collection Tracking
+### Phase 3 — Collection Tracking ✅ Done
+
+> Export & Import was deferred to Phase 3.5. Everything else in this spec is implemented.
 
 #### App structure (UX direction)
 
@@ -208,9 +214,9 @@ Already owned: ×3 Red Binder  ×2 Storage Box A  — Edit →
 
 ---
 
-#### Export & Import
+#### Export & Import *(deferred to Phase 3.5)*
 
-All formats are required for Phase 3. Export/import uses Tauri Rust commands (`#[tauri::command]` in `lib.rs`) for native file dialogs and file I/O.
+Export/import uses Tauri Rust commands (`#[tauri::command]` in `lib.rs`) for native file dialogs and file I/O.
 
 | Format | Columns / Content | Sort |
 |---|---|---|
@@ -228,10 +234,30 @@ All formats are required for Phase 3. Export/import uses Tauri Rust commands (`#
 
 **Location autocomplete:** When user types in any location input, show a dropdown of previously used location strings (sourced from all current collection entries). Included in Phase 3.
 
+### Phase 3.5 — Export/Import + Auto-update + Polish (📋 Next)
+
+**Export** — Tauri Rust commands for native file dialogs; four formats:
+
+| Format | Content | Sort |
+|---|---|---|
+| JSON | Raw `CollectionEntry[]` | as-is |
+| CSV | Code, Quantity, Location | location → code |
+| Printable HTML | Table with card name | location → code |
+| Full backup | `{ collection, wishlist, meta }` | — |
+
+**Import** — native file picker, then ask Merge vs Replace. Full backup restores wishlist too.
+
+**Auto-update DB** — implement the hybrid SHA strategy from Data & Caching: silently check GitHub commit SHA on startup, auto-refresh if SHA differs from cache. Show non-blocking "Checking for updates…" indicator.
+
+**Polish / Bug Fixes:**
+- Bug: `moveQtyInput.max` in the move section doesn't update when qty is changed via `[+]`/`[−]` buttons in the same preview pane
+- Debt: Grouped view uses full DOM re-render on every filter change (not virtualized); acceptable for typical collections but add a note if collection exceeds ~500 entries
+- Refactor: Extract `buildEditSection` from `collection-tab.ts` (410 lines → ~295 after extraction to `collection-edit.ts`)
+
 ### Phase 4 — Distribution
 
 - Windows `.msi` installer
-- Android APK (Tauri mobile target)
+- Android APK (Tauri mobile target; timeline TBD)
 - **CSP must be properly configured before any public release** (currently disabled in `tauri.conf.json`)
 
 ### Phase 5+ — Deck Builder (maybe, not in scope now)
@@ -251,6 +277,8 @@ If added later: Vanguard deck validation (max 4 copies per card name, 50 cards t
 
 ### Update Strategy (Hybrid)
 
+> **Status:** SHA check not yet implemented. Currently only manual Force Refresh works. Auto-update is planned for Phase 3.5.
+
 On every app startup:
 1. Silently fetch the latest commit SHA from the GitHub API (non-blocking)
 2. Compare against the cached SHA in IndexedDB metadata
@@ -269,6 +297,8 @@ Also provide a **manual "Force Refresh" button** in the UI for the user to trigg
 
 ## Performance Targets
 
+> **Note:** Numbers below are unverified estimates. Actual measurement via DevTools is planned for Phase 3.5.
+
 - **Current dataset:** 24,262 cards — this is the target; no need to over-engineer for larger datasets
 - **Filter/search:** Must feel instant (target < 100ms for any filter operation)
 - **Collection queries:** Search within owned cards must be instant regardless of collection size
@@ -283,7 +313,10 @@ Also provide a **manual "Force Refresh" button** in the UI for the user to trigg
 | CSP disabled | `src-tauri/tauri.conf.json` | Must be re-enabled and configured before distribution |
 | Single `"all"` IndexedDB key | `cache.ts` | Stores 10MB as one value; fine for now, revisit if DB grows significantly |
 | No error recovery UI | `main.ts` | Errors shown as inline text; consider toast/modal when collection features land |
-| Rust backend mostly unused | `src-tauri/src/lib.rs` | Only `tauri-plugin-opener` registered; file I/O for Phase 3 export needs Rust commands |
+| Rust backend mostly unused | `src-tauri/src/lib.rs` | Only `tauri-plugin-opener` registered; file I/O for Phase 3.5 export needs Rust commands |
+| Grouped view not virtualized | `collection-grouped.ts` | Full DOM re-render on each filter change; fine for typical collections, may lag at 500+ entries |
+| Move qty input max not synced | `collection-tab.ts` | `moveQtyInput.max` set at preview open time; not updated when qty changes via `[+]`/`[−]` buttons |
+| Performance targets unverified | All | Targets in this doc are estimates; not yet measured with DevTools profiling |
 
 ---
 
