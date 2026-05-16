@@ -211,3 +211,8 @@ export async function addLocation(name: string): Promise<void> {
     await saveLocationsFile(locations);
   }
 }
+
+export async function removeLocation(name: string): Promise<void> {
+  const locations = await loadLocationsFile();
+  await saveLocationsFile(locations.filter((l) => l !== name));
+}

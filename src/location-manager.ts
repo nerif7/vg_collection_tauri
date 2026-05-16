@@ -1,4 +1,4 @@
-import { getAllLocations, addLocation } from "./collection-db.ts";
+import { getAllLocations, addLocation, removeLocation } from "./collection-db.ts";
 
 let _overlay: HTMLElement | null = null;
 let _onClose: (() => void) | undefined;
@@ -76,7 +76,18 @@ async function _render(): Promise<void> {
     for (const loc of locations) {
       const li = document.createElement("li");
       li.className = "location-list-item";
-      li.textContent = loc;
+      const nameSpan = document.createElement("span");
+      nameSpan.textContent = loc;
+      const delBtn = document.createElement("button");
+      delBtn.type = "button";
+      delBtn.className = "location-delete-btn";
+      delBtn.textContent = "×";
+      delBtn.title = "Remove location";
+      delBtn.addEventListener("click", async () => {
+        await removeLocation(loc);
+        _render();
+      });
+      li.append(nameSpan, delBtn);
       list.appendChild(li);
     }
   }

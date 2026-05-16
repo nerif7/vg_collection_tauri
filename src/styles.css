@@ -1153,10 +1153,32 @@ button:disabled {
 }
 
 .location-list-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
   padding: 9px 4px;
   border-bottom: 1px solid var(--border);
   font-size: 0.88rem;
   color: var(--text);
+}
+
+.location-delete-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 1rem;
+  line-height: 1;
+  padding: 2px 6px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+.location-list-item:hover .location-delete-btn {
+  opacity: 1;
+}
+.location-delete-btn:hover {
+  color: var(--danger);
 }
 
 .location-list-item:last-child {
