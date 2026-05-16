@@ -2,16 +2,18 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Security-Policy"
-        content="default-src 'self'; img-src 'self' https://en.cf-vanguard.com data:; connect-src 'self' https://raw.githubusercontent.com https://api.github.com; style-src 'self' 'unsafe-inline';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cardfight!! Vanguard Collection Manager v0.1.0</title>
 </head>
 <body>
+  <div class="startup-progress-track">
+    <div id="startupProgress" class="startup-progress-bar"></div>
+  </div>
   <div class="app">
     <header>
       <h1>Cardfight!! Vanguard Collection Manager</h1>
       <span id="updateSpinner" class="update-spinner" hidden>↻ Checking for updates…</span>
+      <button id="aboutBtn" type="button" class="about-btn" title="About">?</button>
     </header>
 
     <nav class="tab-nav" id="tabNav">

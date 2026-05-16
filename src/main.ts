@@ -29,6 +29,7 @@ import {
 } from "./wishlist-tab.ts";
 import { exportBackup, importBackup, type ImportResult } from "./export-import.ts";
 import { showConfirm } from "./confirm-dialog.ts";
+import { showAboutDialog } from "./about-dialog.ts";
 import "./styles.css";
 
 const DB_URL     = "https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/cards.json";
@@ -58,6 +59,48 @@ const listContainer = document.querySelector<HTMLDivElement>("#cardListContainer
 const listMetaEl    = document.querySelector<HTMLDivElement>("#listMeta")!;
 const filterBarEl   = document.querySelector<HTMLDivElement>("#filterBar")!;
 const previewPaneEl = document.querySelector<HTMLElement>("#previewPane")!;
+
+// ── Startup progress bar ──────────────────────────────────────────────────────
+
+const progressBarEl = document.getElementById("startupProgress");
+
+function setStartupProgress(pct: number): void {
+  if (!progressBarEl) return;
+  progressBarEl.style.width = `${pct}%`;
+  if (pct >= 100) {
+    setTimeout(() => progressBarEl.classList.add("done"), 300);
+  }
+}
+
+// ── Browse tab availability guard ─────────────────────────────────────────────
+
+function setupBrowseGuard(): void {
+  const browseBtn = document.querySelector<HTMLButtonElement>('[data-tab="browse"]');
+  if (!browseBtn) return;
+  browseBtn.addEventListener("click", (e) => {
+    if (allCards.length === 0) {
+      e.stopImmediatePropagation();
+      showToast("Card database unavailable. Connect to the internet and relaunch the app.");
+    }
+  }, { capture: true });
+}
+
+function updateBrowseTabState(): void {
+  const browseBtn = document.querySelector<HTMLButtonElement>('[data-tab="browse"]');
+  if (browseBtn) browseBtn.classList.toggle("tab-btn--unavailable", allCards.length === 0);
+
+  const panel = document.getElementById("tabBrowse");
+  if (!panel) return;
+  const existing = panel.querySelector(".browse-unavailable");
+  if (allCards.length === 0 && !existing) {
+    const msg = document.createElement("div");
+    msg.className = "browse-unavailable";
+    msg.textContent = "Card database unavailable. Connect to the internet and relaunch the app.";
+    panel.prepend(msg);
+  } else if (allCards.length > 0 && existing) {
+    existing.remove();
+  }
+}
 
 // ── Fetch helpers ─────────────────────────────────────────────────────────────
 
@@ -265,21 +308,25 @@ async function refreshCollectionOverlay() {
 // ── Load handlers ─────────────────────────────────────────────────────────────
 
 async function handleLoad() {
+  setStartupProgress(5);
   setControlsDisabled(true);
   setStatus("Loading…", "loading");
   statsEl.innerHTML = "";
 
   try {
     const startLoad = performance.now();
+    setStartupProgress(15);
     const cached = await loadFromCache();
     const loadTime = performance.now() - startLoad;
 
     if (cached) {
       allCards = cached.cards;
       visibleCards = allCards;
+      setStartupProgress(50);
 
       setupFilters();
       refreshList();
+      setStartupProgress(70);
 
       setStatus(`⚡ Loaded ${allCards.length.toLocaleString("id-ID")} cards from cache in ${loadTime.toFixed(0)} ms`, "success");
       renderStats({ count: allCards.length, sizeBytes: cached.meta.sizeBytes, loadFromCacheMs: loadTime });
@@ -290,20 +337,25 @@ async function handleLoad() {
       checkForUpdates(cached.meta).catch(() => {});
     } else {
       await doFetchAndCache();
+      setStartupProgress(70);
     }
 
     // After cards are loaded, init collection + wishlist tabs
     initCollectionTab(allCards, () => { refreshCollectionOverlay().catch(() => {}); });
     initWishlistTab(allCards);
+    setStartupProgress(85);
     const mergedGroups = await deduplicateCollection();
     if (mergedGroups > 0) showToast(`Cleaned up ${mergedGroups} duplicate collection ${mergedGroups === 1 ? "entry" : "entries"}.`);
     await Promise.all([loadCollectionTab(), loadWishlistTab(), refreshCollectionOverlay()]);
+    setStartupProgress(100);
 
   } catch (err) {
+    setStartupProgress(100);
     setStatus(`❌ Failed: ${err instanceof Error ? err.message : String(err)}`, "error");
     console.error(err);
   } finally {
     setControlsDisabled(false);
+    updateBrowseTabState();
   }
 }
 
@@ -336,7 +388,7 @@ async function handleForceRefresh() {
   statsEl.innerHTML = "";
   try { await doFetchAndCache(); }
   catch (err) { setStatus(`❌ Refresh failed: ${err instanceof Error ? err.message : String(err)}`, "error"); }
-  finally { setControlsDisabled(false); }
+  finally { setControlsDisabled(false); updateBrowseTabState(); }
 }
 
 async function handleClearCache() {
@@ -416,8 +468,12 @@ async function init() {
     }
   });
 
+  document.getElementById("aboutBtn")?.addEventListener("click", showAboutDialog);
+
   refreshBtn.addEventListener("click", handleForceRefresh);
   clearBtn.addEventListener("click", handleClearCache);
+
+  setupBrowseGuard();
 
   filterBarEl.style.display = "none";
 
