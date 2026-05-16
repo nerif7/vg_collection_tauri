@@ -388,20 +388,21 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 
 ---
 
-#### 7. Production build & smoke test
+#### 7. Production build & smoke test ✅ Done
 
-- [ ] `npm run build` — zero TypeScript errors, zero Vite warnings
-- [ ] `npm run tauri build` — Rust compile succeeds
-- [ ] Copy the built `.exe` to a fresh folder (no dev environment)
-- [ ] Run `.exe` directly — verify:
-  - `userdata/` folder is created automatically on first run
+- [x] `npm run build` — zero TypeScript errors, zero Vite warnings
+- [x] `npm run tauri build` — Rust compile succeeds (9.2 MB exe)
+- [x] Copy the built `.exe` to a fresh folder (no dev environment)
+- [x] Run `.exe` directly — all verified:
+  - userdata/ folder created automatically on first run
   - App loads, Browse tab shows cards after first fetch
   - Collection add/edit/move/delete/export/import all work
   - Auto-update SHA check spinner appears on startup
   - About dialog opens, GitHub links open in browser
   - Top progress bar appears and disappears on startup
-  - No console errors (F12 → Console tab)
-- [ ] Delete the entire folder → no leftover data anywhere
+  - Default location "my collection" seeded on first run
+  - No console errors
+- [x] Delete the entire folder → no leftover data anywhere
 
 ---
 

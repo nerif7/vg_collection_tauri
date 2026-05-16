@@ -58,14 +58,14 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Fix: grid tile image now portrait ratio (5:7, `object-fit: contain`) — full card visible, no cropping
 - ✅ UX: import dialog centered + selectable mode cards + swapped button colors (Confirm=blue, Cancel=grey)
 
-**Pre-Phase 4 — Distribution Readiness (🔄 In Progress)**
+**Pre-Phase 4 — Distribution Readiness (✅ Done)**
 - ✅ Portable storage refactor — JSON files in `{exe-dir}/userdata/` (IDB removed)
 - ✅ App identity — `tauri.conf.json`: productName, identifier, window title, size
 - ✅ App icon — all Tauri sizes generated (desktop + Android + iOS)
 - ✅ CSP — configured in `tauri.conf.json` (image CDN: `en.cf-vanguard.com`)
 - ✅ About dialog + startup progress bar + offline Browse tab UX
 - ✅ Error handling audit — corrupted JSON shows toast + file path; write failures caught by global unhandledrejection handler
-- 📋 Production build smoke test
+- ✅ Production build smoke test — 9.2 MB portable exe, all features verified
 
 **Phase 4 — Distribution (📋 Next)**
 - 📋 ZIP portable `.exe` as `VGCollection-v0.1.0-win64.zip`, share with friends
