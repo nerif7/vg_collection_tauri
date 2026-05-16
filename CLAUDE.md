@@ -20,7 +20,7 @@ A **Cardfight!! Vanguard** card database browser and personal collection tracker
 |---|---|
 | Desktop framework | Tauri 2.x |
 | Frontend | Vanilla TypeScript + Vite (no component framework, ever) |
-| Local storage | IndexedDB |
+| Local storage | JSON files in `{exe-dir}/userdata/` (portable) |
 | Card data source | GitHub — `nerif7/vanguard-library-db` (`cards.json`, ~10MB, 24k+ cards) |
 | Build tool | Vite |
 | Type checking | TypeScript strict mode |
@@ -30,8 +30,8 @@ A **Cardfight!! Vanguard** card database browser and personal collection tracker
 ```
 src/
 ├── main.ts               # App orchestration, tab routing, global state
-├── cache.ts              # IndexedDB abstraction (card DB cache)
-├── collection-db.ts      # IndexedDB CRUD for collection + wishlist stores
+├── cache.ts              # File-based card DB cache (userdata/cache/)
+├── collection-db.ts      # JSON file CRUD for collection + wishlist + locations
 ├── filters.ts            # Pure filter logic — no DOM, no side effects, testable
 ├── filter-bar.ts         # Filter UI wiring only (reads filters.ts, writes DOM)
 ├── virtual-list.ts       # Generic virtualized list renderer (RAF-throttled)
@@ -48,6 +48,8 @@ src/
 ├── location-manager.ts   # Manage Locations modal
 ├── confirm-dialog.ts     # Custom centered confirm dialog (replaces native popup)
 ├── export-import.ts      # Export/Import backup logic (Tauri invoke + import dialog)
+├── about-dialog.ts       # About dialog (version, links, GitHub)
+├── toast.ts              # Toast notification — shared across modules
 ├── types.ts              # All TypeScript interfaces and types
 └── styles.css            # Light/dark theme styling
 
@@ -59,7 +61,7 @@ src-tauri/src/
 ### Key Architectural Decisions
 
 - **Vanilla TS over React/Vue** — keeps bundle tiny, no framework overhead; this is a firm constraint
-- **IndexedDB for everything local** — card DB cache and collection data both live here; large datasets (10MB) don't hit localStorage limits
+- **JSON files in `{exe-dir}/userdata/`** — portable storage; copy folder = copy data, delete folder = clean uninstall; custom Rust commands (`get_userdata_dir`, `read_text_file`, `write_text_file`) instead of `tauri-plugin-fs`
 - **Pure filter module** — `filters.ts` has zero DOM dependencies; easy to test and reuse
 - **Generic `VirtualList<T>`** — parameterized by row height + render function; works with any data type
 
@@ -127,8 +129,8 @@ The primary view is the user's **own collection** — not the card browser. Navi
 
 ```typescript
 interface CollectionEntry {
-  id?: number;       // autoIncrement PK (undefined when creating, assigned by IDB)
-  cardCode: string;  // indexed; matches Card.enCardNo
+  id?: number;       // autoIncrement PK (undefined when creating; assigned on save)
+  cardCode: string;  // matches Card.enCardNo
   quantity: number;  // always >= 1
   location: string;  // free-form; empty string = "unspecified"
 }
@@ -144,10 +146,11 @@ interface WishlistEntry {
 - **Wishlist is independent** — a card can be in both collection and wishlist simultaneously (e.g., owned 1 copy, still looking for more).
 - **Empty location is valid** — means "unspecified", stored as `""`.
 
-**IndexedDB stores:**
-- `collection` store: `keyPath: "id"`, `autoIncrement: true`, indexes on `cardCode` and `location`
-- `wishlist` store: `keyPath: "cardCode"`
-- Neither store is affected by Force Refresh or Clear Cache (card DB cache clears never touch these)
+**File storage:**
+- `userdata/collection.json` — `CollectionEntry[]`; ID assigned via `Math.max(...ids) + 1`
+- `userdata/wishlist.json` — `WishlistEntry[]`
+- `userdata/locations.json` — `string[]`; seeded with `["my collection"]` on first run
+- Neither collection nor wishlist is affected by Force Refresh or Clear Cache
 
 ---
 
@@ -244,10 +247,7 @@ Full backup only (JSON). Format: `{ collection: CollectionEntry[], wishlist: Wis
 - ✅ Fix: grid tile portrait ratio (5:7, object-fit contain) — full card visible
 - ✅ UX: import dialog centered; Confirm=blue, Cancel=grey (btn-neutral) across all dialogs
 
-### Pre-Phase 4 — Distribution Readiness Gate 📋
-
-Everything here must be completed and verified before building the distributable.
-This is a hard gate — do not proceed to Phase 4 until all items are checked off.
+### Pre-Phase 4 — Distribution Readiness Gate ✅ Done
 
 **Decisions locked for v0.1.0:**
 - Target OS: Windows 11 only (64-bit, WebView2 pre-installed — no bundling needed)
@@ -257,123 +257,14 @@ This is a hard gate — do not proceed to Phase 4 until all items are checked of
 - Distribution: portable `.exe` (not MSI installer) — user copies to any folder
 - Data location: `{exe-dir}/userdata/` (portable, survives "delete folder" uninstall)
 
----
-
-#### 1. Portable storage refactor (MAJOR — do first)
-
-**Current:** IndexedDB (WebView2 AppData) — data does NOT survive folder deletion.
-**Target:** JSON files in `{exe-dir}/userdata/` — truly portable, delete folder = clean uninstall.
-
-File layout:
-```
-install-dir/
-├── VGCollection.exe
-└── userdata/
-    ├── collection.json       ← CollectionEntry[]
-    ├── wishlist.json         ← WishlistEntry[]
-    └── cache/
-        ├── cards.json        ← Card[] (10MB)
-        └── cards-meta.json   ← CacheMeta
-```
-
-Implementation approach:
-- Add Rust command `get_userdata_dir()` → returns `{exe_dir}/userdata` as string
-- Add `tauri-plugin-fs` (or use custom Rust read/write commands) for file I/O
-- Rewrite `cache.ts` — replace IDB reads/writes with file read/write via Tauri invoke
-- Rewrite `collection-db.ts` — replace IDB CRUD with JSON array read-modify-write
-  - Auto-increment ID: `Math.max(0, ...entries.map(e => e.id ?? 0)) + 1`
-  - No transactions needed (single-user app, no concurrency)
-  - Filters: plain Array.filter (collection is small, always in memory)
-- Keep all TypeScript interfaces (`CollectionEntry`, `WishlistEntry`, `Card`) unchanged
-- Remove `@tauri-apps/api` IDB wrappers — they are no longer needed
-
-Migration: no existing users, so no migration path needed for v0.1.0.
-
-After refactor, test:
-- [ ] Collection add/edit/move/delete persists across app restarts
-- [ ] Export reads from userdata files correctly
-- [ ] Import writes to userdata files correctly
-- [ ] Card cache loads from file, falls back to GitHub fetch on first run
-- [ ] Deleting the app folder completely removes all data (portable confirmed)
-
----
-
-#### 2. App identity & metadata
-
-- [ ] `tauri.conf.json` — set:
-  - `"identifier": "com.nerif.vgcollection"`
-  - `"version": "0.1.0"`
-  - `"productName": "VG Collection"`
-  - `windows[0].title`: `"Cardfight!! Vanguard Collection Manager v0.1.0"`
-  - `windows[0].width`: 1280, `windows[0].height`: 800
-  - `windows[0].minWidth`: 1024, `windows[0].minHeight`: 600
-- [ ] `package.json` — set `"version": "0.1.0"`
-
----
-
-#### 3. App icon
-
-Tauri requires multiple sizes. Steps:
-1. Find a suitable card/binder icon image (PNG, ideally 512×512 or larger)
-   - Suggestion: search "playing card icon PNG" on icon sites (flaticon, icons8, etc.)
-   - Or draw a simple SVG (a stylized card shape)
-2. Generate all sizes using an online tool (e.g. `icoconvert.com` or `realfavicongenerator.net`):
-   - 32×32, 128×128, 128×128@2x (256×256) → PNG files
-   - `icon.ico` containing 16, 32, 48, 64, 128, 256 sizes
-3. Place in `src-tauri/icons/`
-4. Update `tauri.conf.json` `bundle.icon` array to reference them
-- [ ] Icon appears in taskbar and Alt+Tab after build
-
----
-
-#### 4. Content Security Policy (CSP)
-
-Currently disabled in `tauri.conf.json`. Re-enable before distribution.
-
-To find the card image CDN domain:
-1. Open app → Browse tab → click any card → check image URL in DevTools Network tab
-2. Note the domain (e.g. `cardfight.fandom.com`, `bushiroad.com`, etc.)
-
-Then add to `tauri.conf.json` → `app.security.csp`:
-```json
-"default-src 'self'; img-src 'self' https://raw.githubusercontent.com https://<image-cdn>; connect-src https://raw.githubusercontent.com https://api.github.com; script-src 'self'; style-src 'self' 'unsafe-inline'"
-```
-
-Test with CSP enabled:
-- [ ] Card images load
-- [ ] GitHub cards.json fetch works
-- [ ] GitHub SHA check works
-- [ ] No CSP violation errors in DevTools console
-
----
-
-#### 5. New features before distribution
-
-**A. About dialog**
-
-Accessible from a button in the toolbar (e.g. `?` or `About` link).
-Content:
-- App name: VG Collection Manager
-- Version: v0.1.0
-- By: Nerif
-- GitHub repo link → opens in system browser via `tauri-plugin-opener`
-- Card database: link to `nerif7/vanguard-library-db`
-
-**B. Top progress bar (startup loading)**
-
-A thin bar at the very top of the page (like YouTube/GitHub), showing progress during startup:
-- 0% → app shell loaded
-- 50% → card data reading from file (or fetching from GitHub)
-- 100% → list rendered, bar disappears
-
-Show only on first load; do not show on tab switches or filter changes.
-
-**C. Offline UX — Browse tab disabled**
-
-When app starts with no card cache (first launch + no internet):
-- Browse tab button is visually disabled (greyed out)
-- Clicking it shows: `"Card database unavailable. Connect to the internet and relaunch the app."`
-- Collection and Wishlist tabs work normally (they use local files)
+All items completed:
+- ✅ Portable storage — JSON files in `{exe-dir}/userdata/`; custom Rust file I/O commands
+- ✅ App identity — `tauri.conf.json`: productName, identifier, window title, size, version
+- ✅ App icon — generated via `npm run tauri icon` from Vanguard card sleeve image (1024×1024)
+- ✅ CSP — in `tauri.conf.json`; image CDN: `en.cf-vanguard.com`
+- ✅ About dialog (`?` button), startup progress bar, offline Browse tab UX
+- ✅ Error handling audit — corrupted JSON toasts with file path; write failures via global `unhandledrejection`
+- ✅ Production build smoke test — 9.2 MB exe, all features verified
 
 ---
 
@@ -406,15 +297,12 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 
 ---
 
-### Phase 4 — Distribution 📋
+### Phase 4 — Distribution 🔄 In Progress
 
-Only start after all Pre-Phase 4 items are checked off.
-
-- [ ] ZIP the built `.exe` (from `src-tauri/target/release/`) into `VGCollection-v0.1.0-win64.zip`
-- [ ] Test the ZIP: extract to fresh folder → run → all features work
-- [ ] Share `.zip` with intended users (direct file transfer or Google Drive)
-- [ ] When stable and ready: publish as GitHub Release on the repo
-- [ ] Android APK (Tauri mobile target; timeline TBD — after Windows v0.1.0 is stable)
+- ✅ ZIP packaged as `VGCollection-v0.1.0-win64.zip` (2.8 MB compressed)
+- 📋 Share `.zip` with intended users (direct file transfer or Google Drive)
+- 📋 When stable and ready: publish as GitHub Release on the repo
+- 📋 Android APK (Tauri mobile target; timeline TBD — after Windows v0.1.0 is stable)
 
 ### Phase 5+ — Future Features (maybe, not in scope now)
 
@@ -429,15 +317,15 @@ Only start after all Pre-Phase 4 items are checked off.
 ### Card Database
 
 - **Source:** `https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/cards.json`
-- **Cache:** IndexedDB, single `"all"` key holds the entire array
-- **Metadata store:** Caches fetch timestamp, commit SHA, card count, file size
+- **Cache:** `userdata/cache/cards.json` — full `Card[]` array as JSON
+- **Metadata:** `userdata/cache/cards-meta.json` — fetch timestamp, commit SHA, card count, file size
 - **Staleness threshold:** 7 days
 
 ### Update Strategy (Hybrid) ✅ Implemented
 
 On every app startup:
 1. Silently fetch the latest commit SHA from the GitHub API (non-blocking)
-2. Compare against the cached SHA in IndexedDB metadata
+2. Compare against the cached SHA in `cards-meta.json`
 3. If different → trigger a background refresh and show toast "Cards updated — X cards loaded."
 4. Show a "Checking for updates…" spinner in the top toolbar while check runs
 5. If rate-limited or network error → `fetchLatestCommitSha()` returns `null`; treated as "up to date" (silent skip)
@@ -446,7 +334,9 @@ Also provides a **manual "Force Refresh" button** for immediate re-fetch.
 
 ### Collection & Wishlist Data
 
-- Two separate IndexedDB stores: `collection` (autoIncrement id, indexed by cardCode + location) and `wishlist` (keyed by cardCode)
+- `userdata/collection.json` — `CollectionEntry[]`; read-modify-write on every mutation
+- `userdata/wishlist.json` — `WishlistEntry[]`
+- `userdata/locations.json` — `string[]`; seeded with `["my collection"]` on first run
 - Multiple entries per cardCode are allowed — each `cardCode + location` pair is a unique entry
 - Must not be affected by card DB cache clears or Force Refresh
 
@@ -458,7 +348,7 @@ Measured on Windows 11, 24,262 cards / 10.09 MB:
 
 | Operation | Measured |
 |---|---|
-| Load from IndexedDB cache | **119 ms** |
+| Load from file cache | **119 ms** |
 | Parse JSON | **17 ms** |
 | Total startup (cache hit) | **~135 ms** |
 | Fetch from GitHub (slow network) | **~9.4 s** |
@@ -473,11 +363,6 @@ Measured on Windows 11, 24,262 cards / 10.09 MB:
 
 | Item | Location | Priority | Notes |
 |---|---|---|---|
-| IndexedDB → file storage refactor | `cache.ts`, `collection-db.ts` | **BLOCKER** for distribution | Portable mode requires JSON files in `{exe}/userdata/` |
-| CSP disabled | `src-tauri/tauri.conf.json` | **BLOCKER** for distribution | Must be configured before shipping |
-| No app icon | `src-tauri/icons/` | **BLOCKER** for distribution | Tauri uses placeholder icon by default |
-| Bundle ID / version not set | `tauri.conf.json` | **BLOCKER** for distribution | Currently defaults; must set before build |
-| No error recovery for file I/O | `cache.ts` (post-refactor) | High | Corrupted JSON files need graceful fallback |
 | Grouped view not virtualized | `collection-grouped.ts` | Medium | Full DOM re-render; may lag at 500+ entries |
 | `btn-secondary` naming | `styles.css` | Low | Semantically misleading — it's the primary blue action button |
 
@@ -516,4 +401,4 @@ Windows build output: `src-tauri/target/release/bundle/msi/`
 | `tauri-plugin-dialog` | Native file save/open dialogs (Rust side, used by export/import) |
 | `vite` | Frontend bundler and dev server |
 
-Card image CDN and GitHub API are whitelisted in `index.html` CSP `<meta>` tags.
+Card image CDN (`en.cf-vanguard.com`) and GitHub API are whitelisted in `tauri.conf.json` CSP.
