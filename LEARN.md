@@ -18,6 +18,7 @@ not just *what* the code does, but *why* it was built this way.
    - [Why one file, one responsibility?](#35-why-one-file-one-responsibility)
    - [Why TypeScript strict mode?](#36-why-typescript-strict-mode)
    - [Why SHA-based auto-update?](#37-why-sha-based-auto-update-instead-of-just-a-timer)
+   - [Why replace IndexedDB with JSON files?](#38-why-replace-indexeddb-with-json-files-pre-phase-4)
 4. [Deep Dives](#4-deep-dives)
    - [IndexedDB: How It Really Works](#41-indexeddb-how-it-really-works)
    - [VirtualList Algorithm](#42-virtuallist-algorithm)
@@ -72,17 +73,17 @@ opportunity to learn:
 │  │(collection  │    └─────────┬─────────┘                │
 │  │ + wishlist) │              │                          │
 │  └─────────────┘    ┌─────────▼─────────┐               │
-│                     │   IndexedDB        │               │
-│                     │ (browser storage)  │               │
+│                     │  JSON files in     │               │
+│                     │  {exe}/userdata/   │               │
 │                     └────────────────────┘               │
 └──────────────────────────────────────────────────────────┘
 ```
 
 **Data flows:**
 
-1. On startup → `cache.ts` loads card data from IndexedDB (or fetches from GitHub)
+1. On startup → `cache.ts` loads card data from `userdata/cache/cards.json` (or fetches from GitHub)
 2. Cards are passed down to each tab's init function
-3. `collection-db.ts` handles all reads/writes for the user's own data
+3. `collection-db.ts` handles all reads/writes for the user's own data via `userdata/collection.json` and `userdata/wishlist.json`
 4. `VirtualList` and `VirtualGrid` handle rendering — only visible items are in the DOM
 5. Tauri wraps the entire WebView in a native window (Rust process manages the OS layer)
 
@@ -198,6 +199,11 @@ transactions with rollback, and better performance for complex queries. But the 
 
 **IndexedDB wins for this use case** because all our data access patterns are trivially
 expressible as key-value or index lookups. We never need joins.
+
+> **Update (Pre-Phase 4):** IndexedDB was later replaced with JSON files in
+> `{exe-dir}/userdata/`. The reason is portability — IndexedDB stores data in
+> `%AppData%\WebView2\...` which is not removed when you delete the app folder.
+> See [section 3.8](#38-why-replace-indexeddb-with-json-files-pre-phase-4) for the full reasoning.
 
 ---
 
@@ -445,6 +451,98 @@ async fn export_backup(app: tauri::AppHandle, content: String) -> Result<bool, S
 `tauri-plugin-fs` that wraps either a `PathBuf` (desktop) or a URL (mobile/Android
 content URIs). Use `path.into_path()` to extract the `PathBuf`, which always succeeds
 on desktop.
+
+---
+
+### 3.8 Why Replace IndexedDB with JSON Files? (Pre-Phase 4)
+
+The app was originally built with IndexedDB for all local storage — card cache, collection,
+wishlist, and locations. For development and browser testing, IndexedDB is the right choice:
+it's fast (~119 ms to load 10 MB), reliable, and works without any native dependencies.
+
+**The portability problem:**
+
+IndexedDB on Windows (via WebView2) stores its data at:
+```
+C:\Users\<Name>\AppData\Roaming\com.nerif.vgcollection\EBWebView\...
+```
+
+This is completely separate from the app's install folder. If a user:
+1. Copies `VGCollection.exe` to a USB drive → no data comes with it
+2. Deletes the app folder → data stays behind in `%AppData%`
+3. Moves the exe to a different PC → starts with a fresh empty database
+
+This is the opposite of "portable." A portable app should behave like a folder: copy the
+folder, get the data. Delete the folder, clean uninstall.
+
+**Why JSON files in `{exe-dir}/userdata/`?**
+
+```
+install-dir/
+├── VGCollection.exe
+└── userdata/
+    ├── collection.json    ← CollectionEntry[]
+    ├── wishlist.json      ← WishlistEntry[]
+    ├── locations.json     ← string[]
+    └── cache/
+        ├── cards.json     ← Card[] (10 MB)
+        └── cards-meta.json ← CacheMeta
+```
+
+- Delete the folder → everything is gone. True uninstall.
+- Copy the folder → your collection travels with you.
+- Inspect your data at any time — it's plain JSON.
+- No migration logic needed for v0.1.0 (no existing users).
+
+**Implementation: custom Rust commands, not `tauri-plugin-fs`**
+
+`tauri-plugin-fs` is a Tauri plugin that lets the webview read/write files with permission
+scopes. For our use case, we chose **custom Rust commands** instead:
+
+```rust
+#[tauri::command]
+fn get_userdata_dir() -> Result<String, String> {
+    let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
+    let exe_dir = exe_path.parent().ok_or("exe has no parent directory")?;
+    Ok(exe_dir.join("userdata").to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+fn read_text_file(path: String) -> Result<Option<String>, String> { /* std::fs */ }
+
+#[tauri::command]
+fn write_text_file(path: String, content: String) -> Result<(), String> { /* std::fs + create_dir_all */ }
+```
+
+**Why custom commands over `tauri-plugin-fs`?**
+- No extra dependency in `Cargo.toml`
+- No capability scope configuration needed — the Rust process reads/writes freely
+- `write_text_file` automatically creates parent directories (`create_dir_all`)
+- `read_text_file` returns `Option<String>` — `None` if file doesn't exist, not an error
+
+**`collection-db.ts` design after refactor:**
+
+The IDB transaction model is replaced with a simple read-modify-write pattern:
+```typescript
+export async function mergeOrAdd(cardCode: string, location: string, qty: number): Promise<void> {
+  const entries = await loadCollectionFile();          // read
+  const existing = entries.find(...);
+  if (existing) { existing.quantity += qty; }          // modify
+  else { entries.push({ id: nextId(entries), ... }); }
+  await saveCollectionFile(entries);                   // write
+}
+```
+
+For a single-user desktop app with a small collection (< 500 entries), this is simpler
+and more readable than IDB transactions — and fast enough (a few milliseconds per operation).
+
+`deduplicateCollection()` was refactored from N reads+writes (one per duplicate group) to
+a single read + single write over the entire collection array.
+
+**Trade-off acknowledged:** If two simultaneous writes happened (e.g., user rapidly clicks +/−),
+the second read might see stale data and overwrite the first write. In a single-user desktop
+app with sequential UI interactions, this is not a real concern. IDB transactions would handle
+this correctly, but the complexity is not worth it here.
 
 ---
 

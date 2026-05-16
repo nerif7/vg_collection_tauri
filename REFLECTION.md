@@ -261,6 +261,24 @@ from now — because you are.
 
 ## Technical Surprises
 
+### File-based storage is simpler than I expected
+
+When the decision was made to replace IndexedDB with JSON files for portability, I expected
+the refactor to be complex — "implementing our own serialization, file locking, atomic
+writes" (which is what I wrote in LEARN.md section 3.3 as a reason NOT to use files).
+
+The actual refactor took one session and touched 3 files. The new `collection-db.ts` is
+shorter and easier to read than the IDB version. The reason: a desktop app with a single
+user and a small collection (< 500 entries) has zero concurrency concerns. The IDB transaction
+model — which exists to handle concurrent reads and writes safely — was pure overhead for this
+use case. A simple `read → modify → write` pattern does exactly the same thing with less code.
+
+**Lesson:** Complexity borrowed from databases (transactions, indexes, schemas) is only
+valuable if the use case has the problems those features solve. For a single-user JSON
+collection, they don't.
+
+---
+
 ### IndexedDB is faster than I expected
 
 I expected IndexedDB to be slow and clunky. Loading 10 MB of JSON from it takes ~33 ms.

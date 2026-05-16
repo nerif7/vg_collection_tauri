@@ -28,6 +28,7 @@ import {
   closeWishlistPreview, refreshWishlistTab,
 } from "./wishlist-tab.ts";
 import { exportBackup, importBackup, type ImportResult } from "./export-import.ts";
+import { showConfirm } from "./confirm-dialog.ts";
 import "./styles.css";
 
 const DB_URL     = "https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/cards.json";
@@ -339,7 +340,8 @@ async function handleForceRefresh() {
 }
 
 async function handleClearCache() {
-  if (!confirm("Clear card cache?")) return;
+  const ok = await showConfirm("Clear card cache? The local card database will be removed. You'll need an internet connection to reload.");
+  if (!ok) return;
   try {
     await Promise.all([clearCards(), clearMeta()]);
     allCards = [];

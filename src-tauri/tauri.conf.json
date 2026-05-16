@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "vg_collection_tauri",
+  "productName": "VG Collection",
   "version": "0.1.0",
-  "identifier": "com.nerif-aji-guntoro.vg_collection_tauri",
+  "identifier": "com.nerif.vgcollection",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -13,9 +13,11 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "vg_collection_tauri",
-        "width": 800,
-        "height": 600
+        "title": "Cardfight!! Vanguard Collection Manager v0.1.0",
+        "width": 1280,
+        "height": 800,
+        "minWidth": 1024,
+        "minHeight": 600
       }
     ],
     "security": {

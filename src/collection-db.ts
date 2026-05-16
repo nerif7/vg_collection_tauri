@@ -1,82 +1,118 @@
-import { openDB } from "./cache.ts";
+import { invoke } from "@tauri-apps/api/core";
 import type { CollectionEntry, WishlistEntry } from "./types.ts";
+import { getUserdataDir } from "./cache.ts";
 
-const STORE_COLLECTION = "collection";
-const STORE_WISHLIST   = "wishlist";
-const STORE_LOCATIONS  = "locations";
+// ── Low-level file helpers ────────────────────────────────────────────────────
 
-function tx<T>(
-  storeName: string,
-  mode: IDBTransactionMode,
-  op: (store: IDBObjectStore) => IDBRequest<T>,
-): Promise<T> {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const db    = await openDB();
-      const t     = db.transaction(storeName, mode);
-      const store = t.objectStore(storeName);
-      const req   = op(store);
-      req.onsuccess = () => resolve(req.result);
-      req.onerror   = () => reject(req.error);
-      t.oncomplete  = () => db.close();
-    } catch (err) {
-      reject(err);
-    }
-  });
+async function readFile(path: string): Promise<string | null> {
+  return invoke<string | null>("read_text_file", { path });
 }
 
-// ── Collection ─────────────────────────────────────────────────────────────────
+async function writeFile(path: string, content: string): Promise<void> {
+  await invoke<void>("write_text_file", { path, content });
+}
+
+// ── Collection file I/O ───────────────────────────────────────────────────────
+
+async function loadCollectionFile(): Promise<CollectionEntry[]> {
+  try {
+    const dir = await getUserdataDir();
+    const content = await readFile(`${dir}/collection.json`);
+    if (!content) return [];
+    return JSON.parse(content) as CollectionEntry[];
+  } catch {
+    return [];
+  }
+}
+
+async function saveCollectionFile(entries: CollectionEntry[]): Promise<void> {
+  const dir = await getUserdataDir();
+  await writeFile(`${dir}/collection.json`, JSON.stringify(entries, null, 2));
+}
+
+// ── Wishlist file I/O ─────────────────────────────────────────────────────────
+
+async function loadWishlistFile(): Promise<WishlistEntry[]> {
+  try {
+    const dir = await getUserdataDir();
+    const content = await readFile(`${dir}/wishlist.json`);
+    if (!content) return [];
+    return JSON.parse(content) as WishlistEntry[];
+  } catch {
+    return [];
+  }
+}
+
+async function saveWishlistFile(entries: WishlistEntry[]): Promise<void> {
+  const dir = await getUserdataDir();
+  await writeFile(`${dir}/wishlist.json`, JSON.stringify(entries, null, 2));
+}
+
+// ── Locations file I/O ────────────────────────────────────────────────────────
+
+async function loadLocationsFile(): Promise<string[]> {
+  try {
+    const dir = await getUserdataDir();
+    const content = await readFile(`${dir}/locations.json`);
+    if (!content) return [];
+    return JSON.parse(content) as string[];
+  } catch {
+    return [];
+  }
+}
+
+async function saveLocationsFile(locations: string[]): Promise<void> {
+  const dir = await getUserdataDir();
+  await writeFile(`${dir}/locations.json`, JSON.stringify(locations, null, 2));
+}
+
+// ── ID generation ─────────────────────────────────────────────────────────────
+
+function nextId(entries: CollectionEntry[]): number {
+  return entries.length === 0 ? 1 : Math.max(...entries.map((e) => e.id ?? 0)) + 1;
+}
+
+// ── Collection API ────────────────────────────────────────────────────────────
 
 export function getAllCollectionEntries(): Promise<CollectionEntry[]> {
-  return tx<CollectionEntry[]>(STORE_COLLECTION, "readonly", (s) => s.getAll());
+  return loadCollectionFile();
 }
 
-export function getCollectionByCardCode(cardCode: string): Promise<CollectionEntry[]> {
-  return tx<CollectionEntry[]>(STORE_COLLECTION, "readonly", (s) =>
-    s.index("cardCode").getAll(cardCode),
-  );
+export async function getCollectionByCardCode(cardCode: string): Promise<CollectionEntry[]> {
+  const entries = await loadCollectionFile();
+  return entries.filter((e) => e.cardCode === cardCode);
 }
 
-export function updateCollectionEntry(entry: CollectionEntry): Promise<IDBValidKey> {
-  return tx<IDBValidKey>(STORE_COLLECTION, "readwrite", (s) => s.put(entry));
+export async function updateCollectionEntry(entry: CollectionEntry): Promise<void> {
+  const entries = await loadCollectionFile();
+  const idx = entries.findIndex((e) => e.id === entry.id);
+  if (idx >= 0) {
+    entries[idx] = entry;
+    await saveCollectionFile(entries);
+  }
 }
 
-export function removeCollectionEntry(id: number): Promise<undefined> {
-  return tx<undefined>(STORE_COLLECTION, "readwrite", (s) => s.delete(id));
+export async function removeCollectionEntry(id: number): Promise<void> {
+  const entries = await loadCollectionFile();
+  await saveCollectionFile(entries.filter((e) => e.id !== id));
 }
 
 /** Add qty to existing cardCode+location entry, or create a new one. */
-export function mergeOrAdd(cardCode: string, location: string, qty: number): Promise<void> {
-  return new Promise(async (resolve, reject) => {
-    try {
-      const db    = await openDB();
-      const t     = db.transaction(STORE_COLLECTION, "readwrite");
-      const store = t.objectStore(STORE_COLLECTION);
-      const req   = store.index("cardCode").getAll(cardCode) as IDBRequest<CollectionEntry[]>;
-
-      req.onsuccess = () => {
-        const existing = req.result.find((e) => e.location === location);
-        if (existing) {
-          store.put({ ...existing, quantity: existing.quantity + qty });
-        } else {
-          store.add({ cardCode, location, quantity: qty });
-        }
-      };
-      req.onerror  = () => reject(req.error);
-      t.oncomplete = () => { db.close(); resolve(); };
-      t.onerror    = () => reject(t.error);
-    } catch (err) {
-      reject(err);
-    }
-  });
+export async function mergeOrAdd(cardCode: string, location: string, qty: number): Promise<void> {
+  const entries = await loadCollectionFile();
+  const existing = entries.find((e) => e.cardCode === cardCode && e.location === location);
+  if (existing) {
+    existing.quantity += qty;
+  } else {
+    entries.push({ id: nextId(entries), cardCode, location, quantity: qty });
+  }
+  await saveCollectionFile(entries);
 }
 
 /** Move qty copies from entry to toLocation. If qty >= entry.quantity, moves everything. */
 export async function movePartial(entry: CollectionEntry, toLocation: string, qty: number): Promise<void> {
   const clampedQty = Math.min(qty, entry.quantity);
   if (clampedQty >= entry.quantity) {
-    // Always merge into destination first, then remove source —
-    // a simple location rename would create a duplicate if destination already has an entry.
     await mergeOrAdd(entry.cardCode, toLocation, entry.quantity);
     await removeCollectionEntry(entry.id!);
   } else {
@@ -87,7 +123,7 @@ export async function movePartial(entry: CollectionEntry, toLocation: string, qt
 
 /** Merges entries that share the same cardCode+location. Returns number of groups merged. */
 export async function deduplicateCollection(): Promise<number> {
-  const entries = await getAllCollectionEntries();
+  const entries = await loadCollectionFile();
   const groups = new Map<string, CollectionEntry[]>();
 
   for (const e of entries) {
@@ -97,14 +133,22 @@ export async function deduplicateCollection(): Promise<number> {
   }
 
   let mergedCount = 0;
+  const result: CollectionEntry[] = [];
+
   for (const group of groups.values()) {
-    if (group.length <= 1) continue;
     group.sort((a, b) => (a.id ?? 0) - (b.id ?? 0));
     const [keep, ...dupes] = group;
-    const totalQty = group.reduce((sum, e) => sum + e.quantity, 0);
-    await updateCollectionEntry({ ...keep, quantity: totalQty });
-    for (const e of dupes) await removeCollectionEntry(e.id!);
-    mergedCount++;
+    if (dupes.length > 0) {
+      const totalQty = group.reduce((sum, e) => sum + e.quantity, 0);
+      result.push({ ...keep, quantity: totalQty });
+      mergedCount++;
+    } else {
+      result.push(keep);
+    }
+  }
+
+  if (mergedCount > 0) {
+    await saveCollectionFile(result);
   }
 
   return mergedCount;
@@ -112,7 +156,7 @@ export async function deduplicateCollection(): Promise<number> {
 
 /** Returns Map<cardCode, totalQty> across all entries — used for Browse row badges. */
 export async function getCollectionQtyMap(): Promise<Map<string, number>> {
-  const entries = await getAllCollectionEntries();
+  const entries = await loadCollectionFile();
   const map = new Map<string, number>();
   for (const e of entries) {
     map.set(e.cardCode, (map.get(e.cardCode) ?? 0) + e.quantity);
@@ -120,51 +164,50 @@ export async function getCollectionQtyMap(): Promise<Map<string, number>> {
   return map;
 }
 
-export function clearAllCollectionEntries(): Promise<undefined> {
-  return tx<undefined>(STORE_COLLECTION, "readwrite", (s) => s.clear());
+export async function clearAllCollectionEntries(): Promise<void> {
+  await saveCollectionFile([]);
 }
 
-export function clearAllWishlistEntries(): Promise<undefined> {
-  return tx<undefined>(STORE_WISHLIST, "readwrite", (s) => s.clear());
+export async function clearAllWishlistEntries(): Promise<void> {
+  await saveWishlistFile([]);
 }
 
-/** Returns all location names from the locations store, sorted A–Z. */
-export async function getAllLocations(): Promise<string[]> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const t    = db.transaction(STORE_LOCATIONS, "readonly");
-    const req  = t.objectStore(STORE_LOCATIONS).getAll() as IDBRequest<{ name: string }[]>;
-    req.onsuccess = () => resolve(req.result.map((r) => r.name).sort());
-    req.onerror   = () => reject(req.error);
-    t.oncomplete  = () => db.close();
-  });
-}
-
-export async function addLocation(name: string): Promise<void> {
-  const db = await openDB();
-  return new Promise((resolve, reject) => {
-    const t   = db.transaction(STORE_LOCATIONS, "readwrite");
-    const req = t.objectStore(STORE_LOCATIONS).put({ name });
-    req.onerror   = () => reject(req.error);
-    t.oncomplete  = () => { db.close(); resolve(); };
-  });
-}
-
-// ── Wishlist ───────────────────────────────────────────────────────────────────
+// ── Wishlist API ──────────────────────────────────────────────────────────────
 
 export function getAllWishlistEntries(): Promise<WishlistEntry[]> {
-  return tx<WishlistEntry[]>(STORE_WISHLIST, "readonly", (s) => s.getAll());
+  return loadWishlistFile();
 }
 
 export async function isInWishlist(cardCode: string): Promise<boolean> {
-  const r = await tx<WishlistEntry | undefined>(STORE_WISHLIST, "readonly", (s) => s.get(cardCode));
-  return r !== undefined;
+  const entries = await loadWishlistFile();
+  return entries.some((e) => e.cardCode === cardCode);
 }
 
-export function addToWishlist(cardCode: string): Promise<IDBValidKey> {
-  return tx<IDBValidKey>(STORE_WISHLIST, "readwrite", (s) => s.put({ cardCode }));
+export async function addToWishlist(cardCode: string): Promise<void> {
+  const entries = await loadWishlistFile();
+  if (!entries.some((e) => e.cardCode === cardCode)) {
+    entries.push({ cardCode });
+    await saveWishlistFile(entries);
+  }
 }
 
-export function removeFromWishlist(cardCode: string): Promise<undefined> {
-  return tx<undefined>(STORE_WISHLIST, "readwrite", (s) => s.delete(cardCode));
+export async function removeFromWishlist(cardCode: string): Promise<void> {
+  const entries = await loadWishlistFile();
+  await saveWishlistFile(entries.filter((e) => e.cardCode !== cardCode));
+}
+
+// ── Locations API ─────────────────────────────────────────────────────────────
+
+/** Returns all location names from locations.json, sorted A–Z. */
+export async function getAllLocations(): Promise<string[]> {
+  const locations = await loadLocationsFile();
+  return [...locations].sort();
+}
+
+export async function addLocation(name: string): Promise<void> {
+  const locations = await loadLocationsFile();
+  if (!locations.includes(name)) {
+    locations.push(name);
+    await saveLocationsFile(locations);
+  }
 }

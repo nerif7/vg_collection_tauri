@@ -58,8 +58,17 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Fix: grid tile image now portrait ratio (5:7, `object-fit: contain`) — full card visible, no cropping
 - ✅ UX: import dialog centered + selectable mode cards + swapped button colors (Confirm=blue, Cancel=grey)
 
+**Pre-Phase 4 — Distribution Readiness (🔄 In Progress)**
+- ✅ Portable storage refactor — JSON files in `{exe-dir}/userdata/` (IDB removed)
+- ✅ App identity — `tauri.conf.json`: productName, identifier, window title, size
+- 📋 App icon (card-themed, all Tauri sizes)
+- 📋 CSP — identify image CDN, configure in `tauri.conf.json`
+- 📋 About dialog + startup progress bar + offline Browse tab UX
+- 📋 Error handling audit (corrupted JSON, write failures)
+- 📋 Production build smoke test
+
 **Phase 4 — Distribution (📋 Next)**
-- 📋 Windows installer (.msi)
+- 📋 ZIP portable `.exe` as `VGCollection-v0.1.0-win64.zip`, share with friends
 - 📋 Android APK build (timeline TBD)
 
 **Phase 5+ — Future (📋 Maybe)**
@@ -85,8 +94,8 @@ Speedup cache vs network: **~79× faster** (measured, network varies)
 
 - **Framework**: [Tauri 2.x](https://tauri.app/)
 - **Frontend**: Vanilla TypeScript + Vite (no component framework)
-- **Storage**: IndexedDB (card cache + collection + wishlist)
-- **Backend**: Rust (file I/O for Phase 4 export/import)
+- **Storage**: JSON files in `{exe-dir}/userdata/` (portable — copy folder = copy data)
+- **Backend**: Rust (file I/O commands for portable storage + export/import)
 - **Data source**: [vanguard-library-db](https://github.com/nerif7/vanguard-library-db) (auto-updated weekly)
 
 ## 🏃 Run Locally
