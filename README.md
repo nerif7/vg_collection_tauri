@@ -45,18 +45,20 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Grid view toggle — all three tabs support list ↔ grid (virtualized, ~160px tiles, ×N badge)
 - ✅ Grouped view — Collection tab can toggle flat list ↔ collapsible location groups (in-group sort: grade → name)
 
-**Phase 3.5 — Export/Import + Auto-update + Polish (📋 Next)**
+**Phase 3.5 — Export/Import + Auto-update + Polish (✅ Done)**
 - ✅ Fix: `moveQtyInput.max` now syncs when qty is changed via +/− buttons
 - ✅ Auto-update: startup SHA check vs GitHub → auto-refresh + toast if outdated; skip if rate-limited
 - ✅ Fix: full move (move all copies) now merges with existing destination entry instead of creating duplicate
 - ✅ Fix: `deduplicateCollection()` runs on startup to clean up any existing duplicates; Add button disabled during async
 - ✅ Export: full backup JSON `{ collection, wishlist, meta }` via Tauri native save dialog
-- ✅ Import: native open dialog → Merge or Replace dialog; warns about unknown card codes; restores wishlist
+- ✅ Import: native open dialog → selectable Merge/Replace cards → two-step confirmation; warns about unknown card codes
 - ✅ Fix: Browse tab ×N badges now update in real-time when Collection tab mutations happen (remove, qty change, move)
-- 📋 Performance: measure real numbers (filter time, grid render) with DevTools — replace estimates in README
+- ✅ Perf: replaced all estimated numbers with real measured values (cache 119ms, parse 17ms, GitHub ~9.4s)
 - ✅ Refactor: extracted `buildEditSection` from `collection-tab.ts` → `collection-edit.ts` (callbacks pattern)
+- ✅ Fix: grid tile image now portrait ratio (5:7, `object-fit: contain`) — full card visible, no cropping
+- ✅ UX: import dialog centered + selectable mode cards + swapped button colors (Confirm=blue, Cancel=grey)
 
-**Phase 4 — Distribution (📋 Planned)**
+**Phase 4 — Distribution (📋 Next)**
 - 📋 Windows installer (.msi)
 - 📋 Android APK build (timeline TBD)
 

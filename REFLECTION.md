@@ -165,6 +165,48 @@ back to `main.ts` (which would be a circular dependency).
 
 ---
 
+### Bug 6: Import dialog appeared in bottom corner instead of centered ✅ Fixed
+
+**What happened:** The import mode dialog (Merge / Replace all) rendered in the
+bottom corner of the screen instead of being centered like other modals.
+
+**Root cause:** `showImportModeDialog` in `export-import.ts` created elements with
+class names `confirm-overlay` and `confirm-box` — but those classes don't exist in
+`styles.css`. The correct class for a full-screen centered overlay is `modal-overlay`
+(which has `position: fixed; inset: 0; display: flex; align-items: center; justify-content: center`).
+Without those styles, the element rendered with no positioning, landing at the bottom
+of the document flow.
+
+**The fix:** Switched to `modal-overlay` + `confirm-dialog` (the same classes used by
+`confirm-dialog.ts`), added an `import-dialog` modifier class for extra width.
+
+**Lesson:** When reusing a modal pattern, copy the exact CSS class names from an
+existing working dialog — don't invent new ones that look similar. A class name typo
+produces no error; it just silently fails to apply any styles.
+
+---
+
+### Bug 7: Confirm button was less prominent than Cancel ✅ Fixed
+
+**What happened:** In all confirm dialogs, Cancel was styled blue (`btn-secondary`) and
+Confirm was styled as a red outline (`btn-danger`). Users expect the primary action
+(Confirm) to be the most prominent button, not Cancel.
+
+**The fix:** Added `btn-neutral` (grey outline) for cancel/dismiss actions. Swapped:
+- Cancel → `btn-neutral` (grey outline, low prominence)
+- Confirm → `btn-secondary` (blue fill, high prominence)
+
+For the import dialog specifically, replaced three separate action buttons (Cancel,
+Replace all, Merge) with selectable mode cards + a single Confirm button that enables
+only after a mode is chosen.
+
+**Lesson:** Blue = "primary action", not "secondary/safe". A Cancel button should never
+be the most visually prominent element in a dialog — that draws the eye away from the
+intended action. Name your CSS classes semantically (`btn-neutral`, `btn-danger`) not
+positionally (`btn-secondary`).
+
+---
+
 ## Process Insights
 
 ### The multi-question approach before implementing
