@@ -297,11 +297,10 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 
 ---
 
-### Phase 4 — Distribution 🔄 In Progress
+### Phase 4 — Distribution ✅ Done
 
 - ✅ ZIP packaged as `VGCollection-v0.1.0-win64.zip` (2.8 MB compressed)
-- 📋 Share `.zip` with intended users (direct file transfer or Google Drive)
-- 📋 When stable and ready: publish as GitHub Release on the repo
+- ✅ Published as GitHub Release — `v0.1.0` tag on `nerif7/vg_collection_tauri`
 - 📋 Android APK (Tauri mobile target; timeline TBD — after Windows v0.1.0 is stable)
 
 ### Phase 5+ — Future Features (maybe, not in scope now)

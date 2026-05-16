@@ -67,8 +67,9 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Error handling audit — corrupted JSON shows toast + file path; write failures caught by global unhandledrejection handler
 - ✅ Production build smoke test — 9.2 MB portable exe, all features verified
 
-**Phase 4 — Distribution (📋 Next)**
-- 📋 ZIP portable `.exe` as `VGCollection-v0.1.0-win64.zip`, share with friends
+**Phase 4 — Distribution (✅ Done)**
+- ✅ ZIP packaged as `VGCollection-v0.1.0-win64.zip` (2.8 MB)
+- ✅ Published as [GitHub Release v0.1.0](https://github.com/nerif7/vg_collection_tauri/releases/tag/v0.1.0)
 - 📋 Android APK build (timeline TBD)
 
 **Phase 5+ — Future (📋 Maybe)**
