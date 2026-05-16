@@ -1,4 +1,5 @@
 import { getAllLocations, addLocation, removeLocation } from "./collection-db.ts";
+import { showConfirm } from "./confirm-dialog.ts";
 
 let _overlay: HTMLElement | null = null;
 let _onClose: (() => void) | undefined;
@@ -84,6 +85,8 @@ async function _render(): Promise<void> {
       delBtn.textContent = "×";
       delBtn.title = "Remove location";
       delBtn.addEventListener("click", async () => {
+        const ok = await showConfirm(`Remove location "${loc}" from the list?\n\nCards already in this location are not affected.`);
+        if (!ok) return;
         await removeLocation(loc);
         _render();
       });
