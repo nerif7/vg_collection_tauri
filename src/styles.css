@@ -1196,7 +1196,7 @@ button:disabled {
 .card-tile-img-wrap {
   position: relative;
   width: 100%;
-  aspect-ratio: 160 / 120;
+  aspect-ratio: 5 / 7;
   background: var(--bg-muted);
   overflow: hidden;
   flex-shrink: 0;
@@ -1205,7 +1205,7 @@ button:disabled {
 .card-tile-img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
 }
 

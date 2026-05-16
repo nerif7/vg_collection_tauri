@@ -82,7 +82,7 @@ function setViewMode(mode: WishlistViewMode): void {
     });
   } else {
     virtualGrid = new VirtualGrid<WishlistEntry>(listContainer, {
-      cellHeight: 200,
+      cellHeight: 320,
       gap: 10,
       buffer: 3,
       renderCell: (entry) =>

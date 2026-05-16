@@ -191,7 +191,7 @@ function refreshList() {
   } else {
     if (!virtualGrid) {
       virtualGrid = new VirtualGrid<Card>(listContainer, {
-        cellHeight: 200,
+        cellHeight: 320,
         gap: 10,
         buffer: 3,
         renderCell: (card) =>

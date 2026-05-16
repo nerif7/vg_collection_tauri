@@ -118,7 +118,7 @@ function setViewMode(mode: CollectionViewMode): void {
     });
   } else if (mode === "grid") {
     virtualGrid = new VirtualGrid<CollectionEntry>(listContainer, {
-      cellHeight: 220,
+      cellHeight: 320,
       gap: 10,
       buffer: 3,
       renderCell: (entry) =>
