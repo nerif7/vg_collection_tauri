@@ -493,6 +493,16 @@ button:disabled {
 .btn-secondary { background: var(--blue); }
 .btn-secondary:hover:not(:disabled) { background: #0d4d8c; }
 
+.btn-neutral {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+.btn-neutral:hover:not(:disabled) {
+  background: var(--bg-muted);
+  color: var(--text);
+}
+
 .btn-danger {
   background: transparent;
   color: var(--red);
@@ -1062,6 +1072,17 @@ button:disabled {
   border: 1px solid var(--border);
   border-radius: 8px;
   padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.12s;
+}
+
+.import-mode-option:hover {
+  border-color: var(--text-muted);
+}
+
+.import-mode-option--selected {
+  border-color: var(--accent);
+  background: rgba(29, 158, 117, 0.08);
 }
 
 .import-mode-option strong {

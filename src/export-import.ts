@@ -160,33 +160,42 @@ function showImportModeDialog(
     const btnRow = document.createElement("div");
     btnRow.className = "confirm-actions";
 
+    let selectedMode: "merge" | "replace" | null = null;
+
     const done = (val: "merge" | "replace" | "cancel") => {
       overlay.remove();
       resolve(val);
     };
 
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button"; confirmBtn.className = "btn-secondary";
+    confirmBtn.textContent = "Confirm";
+    confirmBtn.disabled = true;
+    confirmBtn.addEventListener("click", () => {
+      if (selectedMode) done(selectedMode);
+    });
+
+    const select = (mode: "merge" | "replace") => {
+      selectedMode = mode;
+      mergeOpt.classList.toggle("import-mode-option--selected", mode === "merge");
+      replaceOpt.classList.toggle("import-mode-option--selected", mode === "replace");
+      confirmBtn.disabled = false;
+    };
+
+    mergeOpt.addEventListener("click", () => select("merge"));
+    replaceOpt.addEventListener("click", () => select("replace"));
+
     const cancelBtn = document.createElement("button");
-    cancelBtn.type = "button"; cancelBtn.className = "btn-secondary";
+    cancelBtn.type = "button"; cancelBtn.className = "btn-neutral";
     cancelBtn.textContent = "Cancel";
     cancelBtn.addEventListener("click", () => done("cancel"));
 
-    const replaceBtn = document.createElement("button");
-    replaceBtn.type = "button"; replaceBtn.className = "btn-danger";
-    replaceBtn.textContent = "Replace all";
-    replaceBtn.addEventListener("click", () => done("replace"));
-
-    const mergeBtn = document.createElement("button");
-    mergeBtn.type = "button"; mergeBtn.className = "btn-secondary";
-    mergeBtn.textContent = "Merge";
-    mergeBtn.addEventListener("click", () => done("merge"));
-
-    btnRow.append(cancelBtn, replaceBtn, mergeBtn);
+    btnRow.append(cancelBtn, confirmBtn);
     box.appendChild(btnRow);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     requestAnimationFrame(() => overlay.classList.add("is-open"));
 
     overlay.addEventListener("click", (e) => { if (e.target === overlay) done("cancel"); }, { once: true });
-    mergeBtn.focus();
   });
 }

@@ -21,12 +21,12 @@ export function showConfirm(message: string): Promise<boolean> {
 
     const cancelBtn = document.createElement("button");
     cancelBtn.type = "button";
-    cancelBtn.className = "btn-secondary";
+    cancelBtn.className = "btn-neutral";
     cancelBtn.textContent = "Cancel";
 
     const confirmBtn = document.createElement("button");
     confirmBtn.type = "button";
-    confirmBtn.className = "btn-danger";
+    confirmBtn.className = "btn-secondary";
     confirmBtn.textContent = "Confirm";
 
     actions.append(cancelBtn, confirmBtn);
