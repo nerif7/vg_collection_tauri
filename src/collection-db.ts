@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { CollectionEntry, WishlistEntry } from "./types.ts";
 import { getUserdataDir } from "./cache.ts";
+import { showToast } from "./toast.ts";
 
 // ── Low-level file helpers ────────────────────────────────────────────────────
 
@@ -15,55 +16,97 @@ async function writeFile(path: string, content: string): Promise<void> {
 // ── Collection file I/O ───────────────────────────────────────────────────────
 
 async function loadCollectionFile(): Promise<CollectionEntry[]> {
+  const dir = await getUserdataDir();
+  const path = `${dir}/collection.json`;
+  let content: string | null;
   try {
-    const dir = await getUserdataDir();
-    const content = await readFile(`${dir}/collection.json`);
-    if (!content) return [];
+    content = await readFile(path);
+  } catch (err) {
+    showToast(`⚠️ Cannot read collection data: ${err instanceof Error ? err.message : String(err)}`, "error");
+    return [];
+  }
+  if (!content) return [];
+  try {
     return JSON.parse(content) as CollectionEntry[];
   } catch {
+    showToast(`⚠️ collection.json is corrupted. To reset, delete: ${path}`, "error");
+    console.error("JSON parse error in collection.json — file may be corrupted");
     return [];
   }
 }
 
 async function saveCollectionFile(entries: CollectionEntry[]): Promise<void> {
   const dir = await getUserdataDir();
-  await writeFile(`${dir}/collection.json`, JSON.stringify(entries, null, 2));
+  const path = `${dir}/collection.json`;
+  try {
+    await writeFile(path, JSON.stringify(entries, null, 2));
+  } catch (err) {
+    throw new Error(`Write failed: ${path} — ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // ── Wishlist file I/O ─────────────────────────────────────────────────────────
 
 async function loadWishlistFile(): Promise<WishlistEntry[]> {
+  const dir = await getUserdataDir();
+  const path = `${dir}/wishlist.json`;
+  let content: string | null;
   try {
-    const dir = await getUserdataDir();
-    const content = await readFile(`${dir}/wishlist.json`);
-    if (!content) return [];
+    content = await readFile(path);
+  } catch (err) {
+    showToast(`⚠️ Cannot read wishlist data: ${err instanceof Error ? err.message : String(err)}`, "error");
+    return [];
+  }
+  if (!content) return [];
+  try {
     return JSON.parse(content) as WishlistEntry[];
   } catch {
+    showToast(`⚠️ wishlist.json is corrupted. To reset, delete: ${path}`, "error");
+    console.error("JSON parse error in wishlist.json — file may be corrupted");
     return [];
   }
 }
 
 async function saveWishlistFile(entries: WishlistEntry[]): Promise<void> {
   const dir = await getUserdataDir();
-  await writeFile(`${dir}/wishlist.json`, JSON.stringify(entries, null, 2));
+  const path = `${dir}/wishlist.json`;
+  try {
+    await writeFile(path, JSON.stringify(entries, null, 2));
+  } catch (err) {
+    throw new Error(`Write failed: ${path} — ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // ── Locations file I/O ────────────────────────────────────────────────────────
 
 async function loadLocationsFile(): Promise<string[]> {
+  const dir = await getUserdataDir();
+  const path = `${dir}/locations.json`;
+  let content: string | null;
   try {
-    const dir = await getUserdataDir();
-    const content = await readFile(`${dir}/locations.json`);
-    if (!content) return [];
+    content = await readFile(path);
+  } catch (err) {
+    showToast(`⚠️ Cannot read locations data: ${err instanceof Error ? err.message : String(err)}`, "error");
+    return [];
+  }
+  if (!content) return [];
+  try {
     return JSON.parse(content) as string[];
   } catch {
+    showToast(`⚠️ locations.json is corrupted. To reset, delete: ${path}`, "error");
+    console.error("JSON parse error in locations.json — file may be corrupted");
     return [];
   }
 }
 
 async function saveLocationsFile(locations: string[]): Promise<void> {
   const dir = await getUserdataDir();
-  await writeFile(`${dir}/locations.json`, JSON.stringify(locations, null, 2));
+  const path = `${dir}/locations.json`;
+  try {
+    await writeFile(path, JSON.stringify(locations, null, 2));
+  } catch (err) {
+    throw new Error(`Write failed: ${path} — ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // ── ID generation ─────────────────────────────────────────────────────────────

@@ -182,6 +182,12 @@ header {
   transform: translateX(-50%) translateY(0);
 }
 
+.toast--error {
+  border-color: var(--red);
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 10%, var(--bg-card));
+}
+
 .import-warn {
   font-size: 0.85rem;
   color: var(--amber);
@@ -1268,7 +1274,7 @@ button:disabled {
   opacity: 1;
 }
 .location-delete-btn:hover {
-  color: var(--danger);
+  color: var(--red);
 }
 
 .location-list-item:last-child {

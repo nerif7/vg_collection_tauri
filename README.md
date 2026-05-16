@@ -61,10 +61,10 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 **Pre-Phase 4 — Distribution Readiness (🔄 In Progress)**
 - ✅ Portable storage refactor — JSON files in `{exe-dir}/userdata/` (IDB removed)
 - ✅ App identity — `tauri.conf.json`: productName, identifier, window title, size
-- 📋 App icon (card-themed, all Tauri sizes)
-- 📋 CSP — identify image CDN, configure in `tauri.conf.json`
-- 📋 About dialog + startup progress bar + offline Browse tab UX
-- 📋 Error handling audit (corrupted JSON, write failures)
+- ✅ App icon — all Tauri sizes generated (desktop + Android + iOS)
+- ✅ CSP — configured in `tauri.conf.json` (image CDN: `en.cf-vanguard.com`)
+- ✅ About dialog + startup progress bar + offline Browse tab UX
+- ✅ Error handling audit — corrupted JSON shows toast + file path; write failures caught by global unhandledrejection handler
 - 📋 Production build smoke test
 
 **Phase 4 — Distribution (📋 Next)**

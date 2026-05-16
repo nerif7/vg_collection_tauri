@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { Card } from "./types.ts";
+import { showToast } from "./toast.ts";
 
 export interface CacheMeta {
   lastFetchAt:   number;
@@ -34,10 +35,16 @@ async function writeFile(path: string, content: string): Promise<void> {
 export async function loadCards(): Promise<Card[] | null> {
   try {
     const dir = await getUserdataDir();
-    const content = await readFile(`${dir}/cache/cards.json`);
+    const path = `${dir}/cache/cards.json`;
+    const content = await readFile(path);
     if (!content) return null;
-    const parsed = JSON.parse(content) as Card[];
-    return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
+    try {
+      const parsed = JSON.parse(content) as Card[];
+      return Array.isArray(parsed) && parsed.length > 0 ? parsed : null;
+    } catch {
+      showToast("⚠️ Card cache is corrupted — fetching from GitHub.", "error");
+      return null;
+    }
   } catch {
     return null;
   }
@@ -45,12 +52,22 @@ export async function loadCards(): Promise<Card[] | null> {
 
 export async function saveCards(cards: Card[]): Promise<void> {
   const dir = await getUserdataDir();
-  await writeFile(`${dir}/cache/cards.json`, JSON.stringify(cards));
+  const path = `${dir}/cache/cards.json`;
+  try {
+    await writeFile(path, JSON.stringify(cards));
+  } catch (err) {
+    throw new Error(`Write failed: ${path} — ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 export async function clearCards(): Promise<void> {
   const dir = await getUserdataDir();
-  await writeFile(`${dir}/cache/cards.json`, "[]");
+  const path = `${dir}/cache/cards.json`;
+  try {
+    await writeFile(path, "[]");
+  } catch (err) {
+    throw new Error(`Write failed: ${path} — ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // ── Public API: Meta ──────────────────────────────────────────────────────────
@@ -60,8 +77,12 @@ export async function loadMeta(): Promise<CacheMeta | null> {
     const dir = await getUserdataDir();
     const content = await readFile(`${dir}/cache/cards-meta.json`);
     if (!content) return null;
-    const parsed = JSON.parse(content) as CacheMeta | null;
-    return parsed ?? null;
+    try {
+      const parsed = JSON.parse(content) as CacheMeta | null;
+      return parsed ?? null;
+    } catch {
+      return null;
+    }
   } catch {
     return null;
   }
@@ -69,12 +90,22 @@ export async function loadMeta(): Promise<CacheMeta | null> {
 
 export async function saveMeta(meta: CacheMeta): Promise<void> {
   const dir = await getUserdataDir();
-  await writeFile(`${dir}/cache/cards-meta.json`, JSON.stringify(meta));
+  const path = `${dir}/cache/cards-meta.json`;
+  try {
+    await writeFile(path, JSON.stringify(meta));
+  } catch (err) {
+    throw new Error(`Write failed: ${path} — ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 export async function clearMeta(): Promise<void> {
   const dir = await getUserdataDir();
-  await writeFile(`${dir}/cache/cards-meta.json`, "null");
+  const path = `${dir}/cache/cards-meta.json`;
+  try {
+    await writeFile(path, "null");
+  } catch (err) {
+    throw new Error(`Write failed: ${path} — ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────

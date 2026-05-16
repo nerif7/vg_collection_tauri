@@ -377,12 +377,14 @@ When app starts with no card cache (first launch + no internet):
 
 ---
 
-#### 6. Error handling audit
+#### 6. Error handling audit ✅ Done
 
-- [ ] File read fails (corrupted JSON) → show error, do not crash; offer to reset
-- [ ] File write fails (disk full, permissions) → show error with path info
-- [ ] GitHub rate-limited → silent skip (already handled); no false update toast
-- [ ] Import file invalid → error message shown (already handled)
+- [x] File read fails (corrupted JSON) → show error toast with file path, do not crash (returns empty/null)
+- [x] File write fails (disk full, permissions) → error thrown with path info, caught by global `unhandledrejection` handler → toast shown
+- [x] GitHub rate-limited → silent skip (already handled); no false update toast
+- [x] Import file invalid → error message shown (already handled)
+
+Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "error")` variant shows red toast for 6s; global `unhandledrejection` handler in `main.ts` catches uncaught write errors.
 
 ---
 

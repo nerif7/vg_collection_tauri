@@ -30,6 +30,7 @@ import {
 import { exportBackup, importBackup, type ImportResult } from "./export-import.ts";
 import { showConfirm } from "./confirm-dialog.ts";
 import { showAboutDialog } from "./about-dialog.ts";
+import { showToast } from "./toast.ts";
 import "./styles.css";
 
 const DB_URL     = "https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/cards.json";
@@ -136,18 +137,6 @@ async function loadFromCache(): Promise<{ cards: Card[]; meta: CacheMeta } | nul
 
 function showUpdateSpinner(visible: boolean): void {
   updateSpinnerEl.hidden = !visible;
-}
-
-function showToast(msg: string): void {
-  const toast = document.createElement("div");
-  toast.className = "toast";
-  toast.textContent = msg;
-  document.body.appendChild(toast);
-  requestAnimationFrame(() => toast.classList.add("toast--visible"));
-  setTimeout(() => {
-    toast.classList.remove("toast--visible");
-    setTimeout(() => toast.remove(), 250);
-  }, 3500);
 }
 
 async function checkForUpdates(meta: CacheMeta): Promise<void> {
@@ -418,6 +407,12 @@ function setControlsDisabled(disabled: boolean) {
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 async function init() {
+  window.addEventListener("unhandledrejection", (e) => {
+    const msg = e.reason instanceof Error ? e.reason.message : String(e.reason);
+    showToast(`❌ ${msg}`, "error");
+    e.preventDefault();
+  });
+
   tabNav = new TabNav();
 
   // Close preview panes on tab switch

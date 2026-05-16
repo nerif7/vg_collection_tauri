@@ -205,6 +205,16 @@ be the most visually prominent element in a dialog — that draws the eye away f
 intended action. Name your CSS classes semantically (`btn-neutral`, `btn-danger`) not
 positionally (`btn-secondary`).
 
+### Design Note: Undefined CSS variable `--danger` found
+
+While adding `.toast--error` styles, discovered that `.location-delete-btn:hover` was using
+`color: var(--danger)` — a variable that was never defined in `:root`. The button hover had
+no red color at all. Fixed to `var(--red)`.
+
+**Lesson:** CSS undefined variables silently compute to `inherit` or the initial value — no
+error, no warning. Always search for `var(--` in styles.css when adding new variables to
+confirm all usages are intentional.
+
 ---
 
 ## Process Insights

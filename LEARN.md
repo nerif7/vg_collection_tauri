@@ -19,6 +19,7 @@ not just *what* the code does, but *why* it was built this way.
    - [Why TypeScript strict mode?](#36-why-typescript-strict-mode)
    - [Why SHA-based auto-update?](#37-why-sha-based-auto-update-instead-of-just-a-timer)
    - [Why replace IndexedDB with JSON files?](#38-why-replace-indexeddb-with-json-files-pre-phase-4)
+   - [Error handling without circular deps](#39-error-handling-without-circular-dependencies)
 4. [Deep Dives](#4-deep-dives)
    - [IndexedDB: How It Really Works](#41-indexeddb-how-it-really-works)
    - [VirtualList Algorithm](#42-virtuallist-algorithm)
@@ -543,6 +544,42 @@ a single read + single write over the entire collection array.
 the second read might see stale data and overwrite the first write. In a single-user desktop
 app with sequential UI interactions, this is not a real concern. IDB transactions would handle
 this correctly, but the complexity is not worth it here.
+
+### 3.9 Error Handling Without Circular Dependencies
+
+The app has multiple modules that need to surface errors to the user as toast notifications:
+`cache.ts`, `collection-db.ts`, `collection-tab.ts`, `wishlist-tab.ts`, etc. But `showToast`
+was originally defined in `main.ts`, which orchestrates everything — creating a circular
+dependency if any other module tried to import it.
+
+**Solution: Extract to `toast.ts`**
+
+A minimal module with no dependencies of its own:
+```typescript
+export function showToast(msg: string, kind?: "error"): void { ... }
+```
+
+Any module can import it without creating a dependency cycle. Error toasts use a red style
+and show for 6 seconds (vs 3.5s for normal toasts), giving the user time to read file paths.
+
+**Two failure modes, two strategies:**
+
+1. **Read failures (corrupted JSON):** The load functions distinguish "file missing" (`content === null`)
+   from "file corrupt" (`JSON.parse` throws). Missing files return empty/null silently — this is
+   normal on first run. Corrupt files show a toast with the exact file path so the user knows
+   what to delete to reset.
+
+2. **Write failures (disk full, permissions):** Save functions re-throw with the file path prepended
+   to the error message. Call sites (click handlers in collection-tab.ts etc.) have no try/catch —
+   so the error becomes an unhandled promise rejection. A single global handler in `main.ts` catches
+   all of these and shows them as error toasts:
+   ```typescript
+   window.addEventListener("unhandledrejection", (e) => {
+     showToast(`❌ ${e.reason instanceof Error ? e.reason.message : String(e.reason)}`, "error");
+     e.preventDefault();
+   });
+   ```
+   This keeps every individual call site clean while still guaranteeing errors reach the user.
 
 ---
 
