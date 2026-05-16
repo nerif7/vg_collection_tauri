@@ -307,7 +307,7 @@ async function checkForUpdates(meta: CacheMeta): Promise<void> {
 ```
 
 **Why non-blocking?** The `checkForUpdates()` call is fire-and-forget — the UI loads
-from cache instantly (~33ms) and the SHA check runs in parallel. The user sees the app
+from cache instantly (~135ms) and the SHA check runs in parallel. The user sees the app
 working immediately; if an update arrives, a toast appears without any page reload.
 
 **Rate limit handling:** The GitHub API allows 60 unauthenticated requests per hour. A
@@ -613,7 +613,7 @@ export async function loadCards(): Promise<Card[] | null> {
 **Why not store each card individually?** We never query by individual card — we always
 load all cards and filter in JavaScript. Storing 24,000 individual records would mean
 24,000 IDB read operations vs one. The single-value approach loads the entire dataset in
-one fast read (~33 ms from cache).
+one fast read (~119 ms from cache, measured).
 
 ---
 
@@ -1045,32 +1045,34 @@ malicious card in the database could inject JavaScript that runs in the app cont
 
 ## 5. Performance Analysis
 
-> **Honest disclaimer:** The numbers below come from a single measurement session on one
-> machine (Windows 11, i7, 16 GB RAM). Systematic profiling with DevTools is planned for
-> Phase 3.5.
+Numbers measured on Windows 11 (this machine) with the real app in production mode.
+Database: 24,262 cards, 10.09 MB.
 
 **App startup — cache hit (card data already in IndexedDB):**
-- Load 24,262 cards from IndexedDB: ~33 ms
-- Apply initial filters: ~5 ms
-- Render first ~15 visible rows: ~2 ms
-- **Total: ~40 ms from click to usable app**
+- Load 24,262 cards from IndexedDB: **119 ms** *(measured via in-app stats)*
+- Parse JSON: **17 ms** *(measured)*
+- **Total: ~135 ms from click to usable app** *(measured)*
 
-**App startup — cache miss (first launch or after clear):**
-- Fetch 10 MB from GitHub: ~854 ms (depends on network)
-- Parse 10 MB JSON: ~23 ms
-- Save to IndexedDB: ~120 ms
-- **Total: ~1000 ms**
+**App startup — cache miss (first launch or after Force Refresh):**
+- Fetch 10.09 MB from GitHub: **9405 ms** *(measured — highly network-dependent)*
+- Parse JSON: **17 ms** *(measured)*
+- Save to IndexedDB: ~120 ms *(estimated)*
+- **Total: ~9.5 s on a slow connection; faster on a good connection**
 
 **Filter operations:**
-- Text search on 24,262 cards: estimated < 20 ms (JavaScript Array.filter is fast)
+- Text search on 24,262 cards: < 20 ms *(estimated — filter is pure Array.filter)*
 - Dropdown filter change: same
 
-**Why is IndexedDB load (33 ms) so much faster than network (854 ms)?**
+**Why is IndexedDB load so much faster than network?**
 
-IndexedDB reads from the local disk (or OS file cache if recently accessed). Local disk
-read for 10 MB is in the 20–50 ms range. Network is limited by TCP handshake, TLS,
-GitHub CDN latency, and bandwidth. Even on a fast connection, raw network latency adds
-100–300 ms before a single byte is received.
+IndexedDB reads from the local disk (or OS file cache if recently accessed). At 119 ms
+for 10 MB, that's roughly 84 MB/s — typical for an SSD read with IDB deserialization
+overhead. Network is limited by TCP handshake, TLS, GitHub CDN latency, and bandwidth.
+Even on a fast connection, raw network latency adds 100–300 ms before a single byte is
+received. The measured cache speedup is ~79× (9405 ms vs 119 ms) — the original "26×"
+estimate was based on both an optimistic cache time (33 ms) and a fast network. On a
+good connection the GitHub fetch may be as low as ~500 ms; on a slow one it exceeds 9 s.
+The cache time is consistent regardless of network.
 
 ---
 

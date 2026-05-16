@@ -67,16 +67,17 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 
 ## 📊 Performance
 
-Diukur di Windows 11, database 24.262 kartu (10 MB):
+Diukur di Windows 11, database 24.262 kartu (10.09 MB):
 
 | Operation | Time |
 |---|---|
-| First fetch from GitHub | ~854 ms |
-| Load from IndexedDB cache | **~33 ms** ⚡ |
-| Parse JSON (24k cards) | ~23 ms |
-| Filter + render list | **<20 ms** |
+| First fetch from GitHub | **9405 ms** *(network-dependent)* |
+| Load from IndexedDB cache | **119 ms** ⚡ |
+| Parse JSON (24k cards) | **17 ms** |
+| Total startup (cache hit) | **~135 ms** |
+| Filter + render list | **<20 ms** *(estimated)* |
 
-Speedup cache vs network: **~26× faster**
+Speedup cache vs network: **~79× faster** (measured, network varies)
 
 ## 🛠️ Tech Stack
 
