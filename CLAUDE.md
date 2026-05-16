@@ -91,7 +91,7 @@ Keep files under ~200 lines where practical. If a file grows beyond that, extrac
 
 ### Phase 1 — Done ✅
 
-- Hybrid cache loader (IndexedDB-first ~33ms, GitHub fallback ~854ms)
+- Hybrid cache loader (IndexedDB-first ~119ms measured, GitHub fallback ~9.4s on slow network)
 - Auto-load on startup (no manual button click)
 - Virtualized list rendering for 24k+ cards
 - Search + filter (name, card code, set, nation, unit type, trigger)
@@ -216,43 +216,114 @@ Already owned: ×3 Red Binder  ×2 Storage Box A  — Edit →
 
 ---
 
-#### Export & Import *(deferred to Phase 3.5)*
+#### Export & Import ✅ Implemented in Phase 3.5
 
-Export/import uses Tauri Rust commands (`#[tauri::command]` in `lib.rs`) for native file dialogs and file I/O.
+Full backup only (JSON). Format: `{ collection: CollectionEntry[], wishlist: WishlistEntry[], meta: CacheMeta, exportedAt: number, appVersion: string }`.
 
-| Format | Columns / Content | Sort |
-|---|---|---|
-| JSON | Raw `CollectionEntry[]` array | as-is |
-| CSV | Code, Quantity, Location | location → card code |
-| Printable HTML | Table: Code \| Name \| Qty \| Location | location → card code |
-| Full backup | `{ collection: CollectionEntry[], wishlist: WishlistEntry[], meta: CacheMeta }` | — |
+**Export:** Tauri native save dialog → writes JSON file via Rust `export_backup` command.
 
-**Import (JSON backup):**
-- User selects a JSON file via native dialog
-- App asks: **"Merge with current collection"** or **"Replace current collection"**
-  - Merge: entries that share `cardCode + location` → update qty to file's value; entries not in current collection → add
-  - Replace: clear all existing collection entries, then load from file
-- Wishlist is handled separately in full backup imports (same merge/replace choice applies)
-
-**Location autocomplete:** When user types in any location input, show a dropdown of previously used location strings (sourced from all current collection entries). Included in Phase 3.
+**Import flow:**
+1. Tauri native open dialog → reads file via Rust `import_backup` command
+2. Centered modal: selectable mode cards (Merge / Replace all) → Confirm button enables after selection
+3. Second `showConfirm()` step before execution — user sees exact consequence
+4. Merge: `mergeOrAdd()` for each entry (same cardCode+location sums qty)
+5. Replace: `clearAll*` → then import
+6. Warns if any card codes not in current database (still imports them)
 
 ### Phase 3.5 — Export/Import + Auto-update + Polish ✅ Done
 
 - ✅ Auto-update: startup SHA check vs GitHub → auto-refresh + toast if outdated; skip if rate-limited
-- ✅ Export: full backup JSON `{ collection, wishlist, meta }` via Tauri native save dialog
-- ✅ Import: native open dialog → Merge or Replace dialog; warns about unknown card codes; restores wishlist
+- ✅ Export: full backup JSON via Tauri native save dialog
+- ✅ Import: native open dialog → selectable Merge/Replace cards → two-step confirmation; warns about unknown codes
 - ✅ Fix: `moveQtyInput.max` now syncs when qty is changed via +/− buttons
 - ✅ Fix: full move (move all copies) now merges with existing destination entry instead of creating duplicate
 - ✅ Fix: `deduplicateCollection()` runs on startup to clean up any existing duplicates; Add button disabled during async
 - ✅ Fix: Browse tab ×N badges update in real-time after Collection tab mutations
 - ✅ Refactor: `buildEditSection` extracted from `collection-tab.ts` → `collection-edit.ts` (callbacks pattern)
-- 📋 Performance: measure real numbers with DevTools — replace estimates in README (manual task)
+- ✅ Perf: real measured numbers (cache 119ms, parse 17ms, GitHub ~9.4s)
+- ✅ Fix: grid tile portrait ratio (5:7, object-fit contain) — full card visible
+- ✅ UX: import dialog centered; Confirm=blue, Cancel=grey (btn-neutral) across all dialogs
 
-### Phase 4 — Distribution
+### Pre-Phase 4 — Distribution Readiness Gate 📋
 
-- Windows `.msi` installer
-- Android APK (Tauri mobile target; timeline TBD)
-- **CSP must be properly configured before any public release** (currently disabled in `tauri.conf.json`)
+Everything here must be completed and verified before building the installer.
+This is a quality gate — if anything is unresolved, do not proceed to Phase 4.
+
+#### 1. App identity & metadata
+
+- [ ] **Bundle identifier** — set unique reverse-domain ID in `tauri.conf.json`:
+  `"identifier": "com.nerif.vgcollection"`
+- [ ] **App version** — set `"version": "1.0.0"` in `tauri.conf.json` and `package.json`
+- [ ] **Product name** — confirm `"productName": "VG Collection"` in `tauri.conf.json`
+- [ ] **App description** — set a short description for the installer metadata
+
+#### 2. App icon
+
+- [ ] Create or source a proper app icon (Vanguard-themed or generic card icon)
+- [ ] Generate all required sizes: 32×32, 128×128, 128×128@2x, `icon.ico` (Windows)
+- [ ] Place in `src-tauri/icons/` and reference in `tauri.conf.json` `bundle.icon`
+- [ ] Verify icon appears in taskbar, Alt+Tab, and window title bar
+
+#### 3. Content Security Policy (CSP)
+
+Currently CSP is **disabled** in `tauri.conf.json`. Must be re-enabled before distribution.
+
+Domains to whitelist:
+- `https://raw.githubusercontent.com` — cards.json download
+- `https://api.github.com` — SHA check for auto-update
+- Card image CDN — check actual `imageUrlEn` domain from `cards.json` and add it
+- `'self'` — app scripts and styles
+
+Steps:
+1. Check actual image URL domain (open DevTools → Network tab, find an image request)
+2. Add CSP to `tauri.conf.json` under `app.security.csp`
+3. Test all features with CSP enabled — images load, GitHub fetch works, SHA check works
+4. Fix any CSP violations before proceeding
+
+#### 4. Error handling audit
+
+Review these failure modes — user must never see a blank screen or JS crash:
+
+- [ ] **Network offline on first launch** — no IndexedDB cache yet; app should show a clear message, not hang
+- [ ] **GitHub API rate-limited** — already handled (silent skip); verify toast does not show false update
+- [ ] **Corrupted import file** — already returns `"invalid"`; verify error message is shown to user
+- [ ] **IndexedDB unavailable** — rare but possible (private browsing mode, storage quota); needs a fallback message
+
+#### 5. Production build smoke test
+
+Before packaging:
+- [ ] Run `npm run build` — must pass TypeScript check + Vite bundle with zero errors
+- [ ] Run `npm run tauri build` — Rust compile must succeed
+- [ ] Open the built `.exe` directly (not via `tauri dev`) and verify:
+  - App loads and shows cards
+  - Collection add/edit/move/delete all work
+  - Export/Import work (native dialogs open)
+  - Auto-update check runs on startup (spinner visible briefly)
+  - No console errors in WebView DevTools (F12)
+
+#### 6. Data persistence verification
+
+- [ ] Install the app, add 2–3 collection entries
+- [ ] Close and reopen — entries persist
+- [ ] Note the data location: `%APPDATA%\com.nerif.vgcollection\` (or similar)
+- [ ] Uninstall the app — verify data folder is NOT deleted (user data must survive uninstall)
+
+#### 7. Window & UX polish
+
+- [ ] Window title shows app name (not "Tauri App")
+- [ ] Minimum window size set so layout doesn't break at small sizes
+- [ ] `tauri.conf.json` `windows[0].title` set to `"VG Collection"`
+- [ ] Dark/light mode follows OS correctly in both release and dev builds
+
+### Phase 4 — Distribution 📋
+
+Only start after all Pre-Phase 4 items are checked off.
+
+- [ ] Run `npm run tauri build` → produces `src-tauri/target/release/bundle/msi/*.msi`
+- [ ] Install the `.msi` on a **clean Windows machine** (or VM) that has never run the dev version
+- [ ] Verify WebView2 is available (usually pre-installed on Win10/11) — installer may need to bundle it
+- [ ] Share the `.msi` with intended users
+- [ ] Android APK (Tauri mobile target; timeline TBD — after Windows is stable)
 
 ### Phase 5+ — Future Features (maybe, not in scope now)
 
@@ -290,26 +361,34 @@ Also provides a **manual "Force Refresh" button** for immediate re-fetch.
 
 ---
 
-## Performance Targets
+## Performance (Measured)
 
-> **Note:** Numbers below are unverified estimates. Actual measurement via DevTools is planned for Phase 3.5.
+Measured on Windows 11, 24,262 cards / 10.09 MB:
 
-- **Current dataset:** 24,262 cards — this is the target; no need to over-engineer for larger datasets
-- **Filter/search:** Must feel instant (target < 100ms for any filter operation)
-- **Collection queries:** Search within owned cards must be instant regardless of collection size
-- **Virtualized list:** Already implemented in `virtual-list.ts`; do not regress this
+| Operation | Measured |
+|---|---|
+| Load from IndexedDB cache | **119 ms** |
+| Parse JSON | **17 ms** |
+| Total startup (cache hit) | **~135 ms** |
+| Fetch from GitHub (slow network) | **~9.4 s** |
+
+- **Filter/search:** < 20 ms (pure Array.filter, estimated — no DOM involvement)
+- **Virtualized scroll:** No jank; GPU-composited, only ~20–30 DOM nodes at a time
+- **Collection queries:** Instant for typical collections (< 500 entries)
 
 ---
 
 ## Known Technical Debt
 
-| Item | Location | Notes |
-|---|---|---|
-| CSP disabled | `src-tauri/tauri.conf.json` | Must be re-enabled and configured before distribution |
-| Single `"all"` IndexedDB key | `cache.ts` | Stores 10MB as one value; fine for now, revisit if DB grows significantly |
-| No error recovery UI | `main.ts` | Errors shown as inline text; no retry or recovery flow for network failures |
-| Grouped view not virtualized | `collection-grouped.ts` | Full DOM re-render on each filter change; fine for typical collections, may lag at 500+ entries |
-| Performance targets unverified | All | Targets in this doc are estimates; not yet measured with DevTools profiling |
+| Item | Location | Priority | Notes |
+|---|---|---|---|
+| CSP disabled | `src-tauri/tauri.conf.json` | **BLOCKER** for distribution | Must be configured before shipping |
+| No app icon | `src-tauri/icons/` | **BLOCKER** for distribution | Tauri uses placeholder icon by default |
+| Bundle ID not finalized | `tauri.conf.json` | **BLOCKER** for distribution | Affects install path and data location |
+| No error recovery UI | `main.ts` | High | Network failures show inline text; no retry button |
+| Grouped view not virtualized | `collection-grouped.ts` | Medium | Full DOM re-render; may lag at 500+ entries |
+| Single `"all"` IndexedDB key | `cache.ts` | Low | 10MB as one value; fine unless DB grows significantly |
+| `btn-secondary` naming | `styles.css` | Low | Semantically misleading — it's the primary blue action button |
 
 ---
 
