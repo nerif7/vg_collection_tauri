@@ -132,8 +132,8 @@ Output: `src-tauri/target/release/bundle/`
 vg_collection_tauri/
 ├── src/                    # Frontend TypeScript
 │   ├── main.ts             # App orchestration, tab routing, global state
-│   ├── cache.ts            # IndexedDB abstraction (card DB cache)
-│   ├── collection-db.ts    # IndexedDB CRUD for collection + wishlist stores
+│   ├── cache.ts            # File-based card DB cache (userdata/cache/)
+│   ├── collection-db.ts    # JSON file CRUD for collection + wishlist + locations
 │   ├── types.ts            # All TypeScript interfaces and types
 │   ├── filters.ts          # Pure filter logic (no DOM, no side effects)
 │   ├── filter-bar.ts       # Filter UI wiring
@@ -151,6 +151,8 @@ vg_collection_tauri/
 │   ├── location-manager.ts # Location management modal
 │   ├── confirm-dialog.ts   # Custom centered confirm dialog
 │   ├── export-import.ts    # Export/Import backup logic (Tauri invoke + import dialog)
+│   ├── about-dialog.ts     # About dialog (version, links, GitHub)
+│   ├── toast.ts            # Toast notification (shared across modules)
 │   └── styles.css          # Light/dark theme
 ├── src-tauri/              # Rust backend
 │   ├── src/
