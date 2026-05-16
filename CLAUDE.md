@@ -246,84 +246,172 @@ Full backup only (JSON). Format: `{ collection: CollectionEntry[], wishlist: Wis
 
 ### Pre-Phase 4 — Distribution Readiness Gate 📋
 
-Everything here must be completed and verified before building the installer.
-This is a quality gate — if anything is unresolved, do not proceed to Phase 4.
+Everything here must be completed and verified before building the distributable.
+This is a hard gate — do not proceed to Phase 4 until all items are checked off.
 
-#### 1. App identity & metadata
+**Decisions locked for v0.1.0:**
+- Target OS: Windows 11 only (64-bit, WebView2 pre-installed — no bundling needed)
+- Publisher: Nerif
+- Version: 0.1.0
+- Window title: `"Cardfight!! Vanguard Collection Manager v0.1.0"`
+- Distribution: portable `.exe` (not MSI installer) — user copies to any folder
+- Data location: `{exe-dir}/userdata/` (portable, survives "delete folder" uninstall)
 
-- [ ] **Bundle identifier** — set unique reverse-domain ID in `tauri.conf.json`:
-  `"identifier": "com.nerif.vgcollection"`
-- [ ] **App version** — set `"version": "1.0.0"` in `tauri.conf.json` and `package.json`
-- [ ] **Product name** — confirm `"productName": "VG Collection"` in `tauri.conf.json`
-- [ ] **App description** — set a short description for the installer metadata
+---
 
-#### 2. App icon
+#### 1. Portable storage refactor (MAJOR — do first)
 
-- [ ] Create or source a proper app icon (Vanguard-themed or generic card icon)
-- [ ] Generate all required sizes: 32×32, 128×128, 128×128@2x, `icon.ico` (Windows)
-- [ ] Place in `src-tauri/icons/` and reference in `tauri.conf.json` `bundle.icon`
-- [ ] Verify icon appears in taskbar, Alt+Tab, and window title bar
+**Current:** IndexedDB (WebView2 AppData) — data does NOT survive folder deletion.
+**Target:** JSON files in `{exe-dir}/userdata/` — truly portable, delete folder = clean uninstall.
 
-#### 3. Content Security Policy (CSP)
+File layout:
+```
+install-dir/
+├── VGCollection.exe
+└── userdata/
+    ├── collection.json       ← CollectionEntry[]
+    ├── wishlist.json         ← WishlistEntry[]
+    └── cache/
+        ├── cards.json        ← Card[] (10MB)
+        └── cards-meta.json   ← CacheMeta
+```
 
-Currently CSP is **disabled** in `tauri.conf.json`. Must be re-enabled before distribution.
+Implementation approach:
+- Add Rust command `get_userdata_dir()` → returns `{exe_dir}/userdata` as string
+- Add `tauri-plugin-fs` (or use custom Rust read/write commands) for file I/O
+- Rewrite `cache.ts` — replace IDB reads/writes with file read/write via Tauri invoke
+- Rewrite `collection-db.ts` — replace IDB CRUD with JSON array read-modify-write
+  - Auto-increment ID: `Math.max(0, ...entries.map(e => e.id ?? 0)) + 1`
+  - No transactions needed (single-user app, no concurrency)
+  - Filters: plain Array.filter (collection is small, always in memory)
+- Keep all TypeScript interfaces (`CollectionEntry`, `WishlistEntry`, `Card`) unchanged
+- Remove `@tauri-apps/api` IDB wrappers — they are no longer needed
 
-Domains to whitelist:
-- `https://raw.githubusercontent.com` — cards.json download
-- `https://api.github.com` — SHA check for auto-update
-- Card image CDN — check actual `imageUrlEn` domain from `cards.json` and add it
-- `'self'` — app scripts and styles
+Migration: no existing users, so no migration path needed for v0.1.0.
 
-Steps:
-1. Check actual image URL domain (open DevTools → Network tab, find an image request)
-2. Add CSP to `tauri.conf.json` under `app.security.csp`
-3. Test all features with CSP enabled — images load, GitHub fetch works, SHA check works
-4. Fix any CSP violations before proceeding
+After refactor, test:
+- [ ] Collection add/edit/move/delete persists across app restarts
+- [ ] Export reads from userdata files correctly
+- [ ] Import writes to userdata files correctly
+- [ ] Card cache loads from file, falls back to GitHub fetch on first run
+- [ ] Deleting the app folder completely removes all data (portable confirmed)
 
-#### 4. Error handling audit
+---
 
-Review these failure modes — user must never see a blank screen or JS crash:
+#### 2. App identity & metadata
 
-- [ ] **Network offline on first launch** — no IndexedDB cache yet; app should show a clear message, not hang
-- [ ] **GitHub API rate-limited** — already handled (silent skip); verify toast does not show false update
-- [ ] **Corrupted import file** — already returns `"invalid"`; verify error message is shown to user
-- [ ] **IndexedDB unavailable** — rare but possible (private browsing mode, storage quota); needs a fallback message
+- [ ] `tauri.conf.json` — set:
+  - `"identifier": "com.nerif.vgcollection"`
+  - `"version": "0.1.0"`
+  - `"productName": "VG Collection"`
+  - `windows[0].title`: `"Cardfight!! Vanguard Collection Manager v0.1.0"`
+  - `windows[0].width`: 1280, `windows[0].height`: 800
+  - `windows[0].minWidth`: 1024, `windows[0].minHeight`: 600
+- [ ] `package.json` — set `"version": "0.1.0"`
 
-#### 5. Production build smoke test
+---
 
-Before packaging:
-- [ ] Run `npm run build` — must pass TypeScript check + Vite bundle with zero errors
-- [ ] Run `npm run tauri build` — Rust compile must succeed
-- [ ] Open the built `.exe` directly (not via `tauri dev`) and verify:
-  - App loads and shows cards
-  - Collection add/edit/move/delete all work
-  - Export/Import work (native dialogs open)
-  - Auto-update check runs on startup (spinner visible briefly)
-  - No console errors in WebView DevTools (F12)
+#### 3. App icon
 
-#### 6. Data persistence verification
+Tauri requires multiple sizes. Steps:
+1. Find a suitable card/binder icon image (PNG, ideally 512×512 or larger)
+   - Suggestion: search "playing card icon PNG" on icon sites (flaticon, icons8, etc.)
+   - Or draw a simple SVG (a stylized card shape)
+2. Generate all sizes using an online tool (e.g. `icoconvert.com` or `realfavicongenerator.net`):
+   - 32×32, 128×128, 128×128@2x (256×256) → PNG files
+   - `icon.ico` containing 16, 32, 48, 64, 128, 256 sizes
+3. Place in `src-tauri/icons/`
+4. Update `tauri.conf.json` `bundle.icon` array to reference them
+- [ ] Icon appears in taskbar and Alt+Tab after build
 
-- [ ] Install the app, add 2–3 collection entries
-- [ ] Close and reopen — entries persist
-- [ ] Note the data location: `%APPDATA%\com.nerif.vgcollection\` (or similar)
-- [ ] Uninstall the app — verify data folder is NOT deleted (user data must survive uninstall)
+---
 
-#### 7. Window & UX polish
+#### 4. Content Security Policy (CSP)
 
-- [ ] Window title shows app name (not "Tauri App")
-- [ ] Minimum window size set so layout doesn't break at small sizes
-- [ ] `tauri.conf.json` `windows[0].title` set to `"VG Collection"`
-- [ ] Dark/light mode follows OS correctly in both release and dev builds
+Currently disabled in `tauri.conf.json`. Re-enable before distribution.
+
+To find the card image CDN domain:
+1. Open app → Browse tab → click any card → check image URL in DevTools Network tab
+2. Note the domain (e.g. `cardfight.fandom.com`, `bushiroad.com`, etc.)
+
+Then add to `tauri.conf.json` → `app.security.csp`:
+```json
+"default-src 'self'; img-src 'self' https://raw.githubusercontent.com https://<image-cdn>; connect-src https://raw.githubusercontent.com https://api.github.com; script-src 'self'; style-src 'self' 'unsafe-inline'"
+```
+
+Test with CSP enabled:
+- [ ] Card images load
+- [ ] GitHub cards.json fetch works
+- [ ] GitHub SHA check works
+- [ ] No CSP violation errors in DevTools console
+
+---
+
+#### 5. New features before distribution
+
+**A. About dialog**
+
+Accessible from a button in the toolbar (e.g. `?` or `About` link).
+Content:
+- App name: VG Collection Manager
+- Version: v0.1.0
+- By: Nerif
+- GitHub repo link → opens in system browser via `tauri-plugin-opener`
+- Card database: link to `nerif7/vanguard-library-db`
+
+**B. Top progress bar (startup loading)**
+
+A thin bar at the very top of the page (like YouTube/GitHub), showing progress during startup:
+- 0% → app shell loaded
+- 50% → card data reading from file (or fetching from GitHub)
+- 100% → list rendered, bar disappears
+
+Show only on first load; do not show on tab switches or filter changes.
+
+**C. Offline UX — Browse tab disabled**
+
+When app starts with no card cache (first launch + no internet):
+- Browse tab button is visually disabled (greyed out)
+- Clicking it shows: `"Card database unavailable. Connect to the internet and relaunch the app."`
+- Collection and Wishlist tabs work normally (they use local files)
+
+---
+
+#### 6. Error handling audit
+
+- [ ] File read fails (corrupted JSON) → show error, do not crash; offer to reset
+- [ ] File write fails (disk full, permissions) → show error with path info
+- [ ] GitHub rate-limited → silent skip (already handled); no false update toast
+- [ ] Import file invalid → error message shown (already handled)
+
+---
+
+#### 7. Production build & smoke test
+
+- [ ] `npm run build` — zero TypeScript errors, zero Vite warnings
+- [ ] `npm run tauri build` — Rust compile succeeds
+- [ ] Copy the built `.exe` to a fresh folder (no dev environment)
+- [ ] Run `.exe` directly — verify:
+  - `userdata/` folder is created automatically on first run
+  - App loads, Browse tab shows cards after first fetch
+  - Collection add/edit/move/delete/export/import all work
+  - Auto-update SHA check spinner appears on startup
+  - About dialog opens, GitHub links open in browser
+  - Top progress bar appears and disappears on startup
+  - No console errors (F12 → Console tab)
+- [ ] Delete the entire folder → no leftover data anywhere
+
+---
 
 ### Phase 4 — Distribution 📋
 
 Only start after all Pre-Phase 4 items are checked off.
 
-- [ ] Run `npm run tauri build` → produces `src-tauri/target/release/bundle/msi/*.msi`
-- [ ] Install the `.msi` on a **clean Windows machine** (or VM) that has never run the dev version
-- [ ] Verify WebView2 is available (usually pre-installed on Win10/11) — installer may need to bundle it
-- [ ] Share the `.msi` with intended users
-- [ ] Android APK (Tauri mobile target; timeline TBD — after Windows is stable)
+- [ ] ZIP the built `.exe` (from `src-tauri/target/release/`) into `VGCollection-v0.1.0-win64.zip`
+- [ ] Test the ZIP: extract to fresh folder → run → all features work
+- [ ] Share `.zip` with intended users (direct file transfer or Google Drive)
+- [ ] When stable and ready: publish as GitHub Release on the repo
+- [ ] Android APK (Tauri mobile target; timeline TBD — after Windows v0.1.0 is stable)
 
 ### Phase 5+ — Future Features (maybe, not in scope now)
 
@@ -382,12 +470,12 @@ Measured on Windows 11, 24,262 cards / 10.09 MB:
 
 | Item | Location | Priority | Notes |
 |---|---|---|---|
+| IndexedDB → file storage refactor | `cache.ts`, `collection-db.ts` | **BLOCKER** for distribution | Portable mode requires JSON files in `{exe}/userdata/` |
 | CSP disabled | `src-tauri/tauri.conf.json` | **BLOCKER** for distribution | Must be configured before shipping |
 | No app icon | `src-tauri/icons/` | **BLOCKER** for distribution | Tauri uses placeholder icon by default |
-| Bundle ID not finalized | `tauri.conf.json` | **BLOCKER** for distribution | Affects install path and data location |
-| No error recovery UI | `main.ts` | High | Network failures show inline text; no retry button |
+| Bundle ID / version not set | `tauri.conf.json` | **BLOCKER** for distribution | Currently defaults; must set before build |
+| No error recovery for file I/O | `cache.ts` (post-refactor) | High | Corrupted JSON files need graceful fallback |
 | Grouped view not virtualized | `collection-grouped.ts` | Medium | Full DOM re-render; may lag at 500+ entries |
-| Single `"all"` IndexedDB key | `cache.ts` | Low | 10MB as one value; fine unless DB grows significantly |
 | `btn-secondary` naming | `styles.css` | Low | Semantically misleading — it's the primary blue action button |
 
 ---
