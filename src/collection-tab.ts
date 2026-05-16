@@ -13,7 +13,7 @@ import { buildEditSection } from "./collection-edit.ts";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
-type CollectionSortKey = "loc-code" | "name" | "qty-desc" | "id-desc";
+type CollectionSortKey = "loc-code" | "name" | "code" | "qty-desc" | "id-desc";
 type CollectionViewMode = "list" | "grid" | "grouped";
 
 // ── DOM refs ───────────────────────────────────────────────────────────────────
@@ -201,6 +201,9 @@ function sortEntries(entries: CollectionEntry[], key: CollectionSortKey): Collec
         const nb = cardMap.get(b.cardCode)?.name ?? b.cardCode;
         return na.localeCompare(nb);
       });
+      break;
+    case "code":
+      arr.sort((a, b) => a.cardCode.localeCompare(b.cardCode));
       break;
     case "qty-desc":
       arr.sort((a, b) => b.quantity - a.quantity || a.cardCode.localeCompare(b.cardCode));

@@ -4,7 +4,7 @@ import { VirtualList } from "./virtual-list.ts";
 import { VirtualGrid } from "./virtual-grid.ts";
 import { buildCardTile } from "./card-tile.ts";
 
-type WishlistSortKey = "name" | "nation";
+type WishlistSortKey = "name" | "code" | "nation";
 type WishlistViewMode = "list" | "grid";
 
 // ── DOM refs ───────────────────────────────────────────────────────────────────
@@ -139,18 +139,24 @@ function populateWishlistFilters(): void {
 
 function sortWishlist(entries: WishlistEntry[], key: WishlistSortKey): WishlistEntry[] {
   const arr = [...entries];
-  if (key === "name") {
-    arr.sort((a, b) => {
-      const na = cardMap.get(a.cardCode)?.name ?? a.cardCode;
-      const nb = cardMap.get(b.cardCode)?.name ?? b.cardCode;
-      return na.localeCompare(nb);
-    });
-  } else {
-    arr.sort((a, b) => {
-      const na = cardMap.get(a.cardCode)?.nations[0] ?? "";
-      const nb = cardMap.get(b.cardCode)?.nations[0] ?? "";
-      return na.localeCompare(nb) || a.cardCode.localeCompare(b.cardCode);
-    });
+  switch (key) {
+    case "name":
+      arr.sort((a, b) => {
+        const na = cardMap.get(a.cardCode)?.name ?? a.cardCode;
+        const nb = cardMap.get(b.cardCode)?.name ?? b.cardCode;
+        return na.localeCompare(nb);
+      });
+      break;
+    case "code":
+      arr.sort((a, b) => a.cardCode.localeCompare(b.cardCode));
+      break;
+    case "nation":
+      arr.sort((a, b) => {
+        const na = cardMap.get(a.cardCode)?.nations[0] ?? "";
+        const nb = cardMap.get(b.cardCode)?.nations[0] ?? "";
+        return na.localeCompare(nb) || a.cardCode.localeCompare(b.cardCode);
+      });
+      break;
   }
   return arr;
 }

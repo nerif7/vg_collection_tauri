@@ -127,7 +127,7 @@ export const TRIGGER_OPTIONS: Exclude<TriggerType, null>[] = [
   "Sentinel",
 ];
 
-export type BrowseSortKey = "name" | "grade-asc" | "grade-desc" | "owned-desc";
+export type BrowseSortKey = "name" | "code" | "grade-asc" | "grade-desc" | "owned-desc";
 
 export function sortCards(
   cards: Card[],
@@ -138,6 +138,9 @@ export function sortCards(
   switch (key) {
     case "name":
       arr.sort((a, b) => a.name.localeCompare(b.name));
+      break;
+    case "code":
+      arr.sort((a, b) => a.enCardNo.localeCompare(b.enCardNo));
       break;
     case "grade-asc":
       arr.sort((a, b) => (a.grade ?? 99) - (b.grade ?? 99) || a.name.localeCompare(b.name));
