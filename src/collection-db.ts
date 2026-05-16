@@ -89,7 +89,11 @@ async function loadLocationsFile(): Promise<string[]> {
     showToast(`⚠️ Cannot read locations data: ${err instanceof Error ? err.message : String(err)}`, "error");
     return [];
   }
-  if (!content) return [];
+  if (!content) {
+    const defaults = ["my collection"];
+    await saveLocationsFile(defaults);
+    return defaults;
+  }
   try {
     return JSON.parse(content) as string[];
   } catch {
