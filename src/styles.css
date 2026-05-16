@@ -1032,6 +1032,50 @@ button:disabled {
   justify-content: flex-end;
 }
 
+.import-dialog {
+  min-width: 320px;
+  max-width: 460px;
+}
+
+.import-dialog-title {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.import-dialog-found {
+  font-size: 0.9rem;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.import-dialog-modes {
+  margin: 12px 0 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.import-mode-option {
+  background: var(--bg-muted);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+.import-mode-option strong {
+  display: block;
+  font-size: 0.88rem;
+  color: var(--text);
+  margin-bottom: 2px;
+}
+
+.import-mode-option span {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
 /* ── Location manager dialog ─────────────────────────────────────────────── */
 
 .modal-dialog {

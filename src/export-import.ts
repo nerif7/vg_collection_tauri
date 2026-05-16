@@ -7,6 +7,7 @@ import {
   mergeOrAdd, addToWishlist,
   clearAllCollectionEntries, clearAllWishlistEntries,
 } from "./collection-db.ts";
+import { showConfirm } from "./confirm-dialog.ts";
 
 interface BackupData {
   collection: CollectionEntry[];
@@ -86,6 +87,12 @@ export async function importBackup(
   );
   if (mode === "cancel") return "cancelled";
 
+  const confirmMsg = mode === "merge"
+    ? `Add ${backup.collection.length} collection + ${backup.wishlist.length} wishlist entries to your current data?`
+    : `Delete ALL existing collection and wishlist data, then import ${backup.collection.length} entries?\n\nThis cannot be undone.`;
+  const confirmed = await showConfirm(confirmMsg);
+  if (!confirmed) return "cancelled";
+
   if (mode === "replace") {
     await Promise.all([clearAllCollectionEntries(), clearAllWishlistEntries()]);
   }
@@ -114,59 +121,72 @@ function showImportModeDialog(
 ): Promise<"merge" | "replace" | "cancel"> {
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
-    overlay.className = "confirm-overlay";
+    overlay.className = "modal-overlay";
 
     const box = document.createElement("div");
-    box.className = "confirm-box";
+    box.className = "confirm-dialog import-dialog";
 
-    const msg = document.createElement("p");
-    msg.className = "confirm-message";
-    msg.textContent = `Found ${collectionCount} collection + ${wishlistCount} wishlist entries.`;
-    box.appendChild(msg);
+    const title = document.createElement("div");
+    title.className = "import-dialog-title";
+    title.textContent = "Import Backup";
+    box.appendChild(title);
+
+    const found = document.createElement("div");
+    found.className = "import-dialog-found";
+    found.textContent = `Found ${collectionCount} collection + ${wishlistCount} wishlist entries.`;
+    box.appendChild(found);
 
     if (unknownCount > 0) {
       const warn = document.createElement("p");
       warn.className = "import-warn";
-      warn.textContent = `⚠ ${unknownCount} card code(s) not in current database — will still be imported.`;
+      warn.textContent = `⚠ ${unknownCount} card code(s) not found in current database — will still be imported.`;
       box.appendChild(warn);
     }
 
-    const desc = document.createElement("p");
-    desc.className = "import-mode-desc";
-    desc.innerHTML =
-      "<strong>Merge</strong>: add to existing — same card+location sums qty.<br>" +
-      "<strong>Replace</strong>: clear entire collection and wishlist first.";
-    box.appendChild(desc);
+    const modes = document.createElement("div");
+    modes.className = "import-dialog-modes";
+
+    const mergeOpt = document.createElement("div");
+    mergeOpt.className = "import-mode-option";
+    mergeOpt.innerHTML = "<strong>Merge</strong><span>Add to existing collection. Same card + location combines quantities.</span>";
+
+    const replaceOpt = document.createElement("div");
+    replaceOpt.className = "import-mode-option";
+    replaceOpt.innerHTML = "<strong>Replace all</strong><span>Delete all existing collection and wishlist data first, then import.</span>";
+
+    modes.append(mergeOpt, replaceOpt);
+    box.appendChild(modes);
 
     const btnRow = document.createElement("div");
-    btnRow.className = "confirm-buttons";
+    btnRow.className = "confirm-actions";
 
     const done = (val: "merge" | "replace" | "cancel") => {
       overlay.remove();
       resolve(val);
     };
 
-    const mergeBtn = document.createElement("button");
-    mergeBtn.type = "button"; mergeBtn.className = "btn-secondary";
-    mergeBtn.textContent = "Merge";
-    mergeBtn.addEventListener("click", () => done("merge"));
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button"; cancelBtn.className = "btn-secondary";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.addEventListener("click", () => done("cancel"));
 
     const replaceBtn = document.createElement("button");
     replaceBtn.type = "button"; replaceBtn.className = "btn-danger";
     replaceBtn.textContent = "Replace all";
     replaceBtn.addEventListener("click", () => done("replace"));
 
-    const cancelBtn = document.createElement("button");
-    cancelBtn.type = "button"; cancelBtn.className = "btn-secondary";
-    cancelBtn.textContent = "Cancel";
-    cancelBtn.addEventListener("click", () => done("cancel"));
+    const mergeBtn = document.createElement("button");
+    mergeBtn.type = "button"; mergeBtn.className = "btn-secondary";
+    mergeBtn.textContent = "Merge";
+    mergeBtn.addEventListener("click", () => done("merge"));
 
-    btnRow.append(mergeBtn, replaceBtn, cancelBtn);
+    btnRow.append(cancelBtn, replaceBtn, mergeBtn);
     box.appendChild(btnRow);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
     requestAnimationFrame(() => overlay.classList.add("is-open"));
 
+    overlay.addEventListener("click", (e) => { if (e.target === overlay) done("cancel"); }, { once: true });
     mergeBtn.focus();
   });
 }
