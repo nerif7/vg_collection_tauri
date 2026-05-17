@@ -1,6 +1,6 @@
 [package]
 name = "vg_collection_tauri"
-version = "0.1.0"
+version = "0.2.0"
 description = "Cardfight!! Vanguard collection manager"
 authors = ["Nerif"]
 edition = "2021"
