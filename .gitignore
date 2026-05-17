@@ -12,6 +12,12 @@ dist
 dist-ssr
 *.local
 
+# Android signing keystore (keep private)
+*.jks
+*.keystore
+VGCollection-*.zip
+VGCollection-*.apk
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
