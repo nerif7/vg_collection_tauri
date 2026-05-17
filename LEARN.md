@@ -545,6 +545,120 @@ the second read might see stale data and overwrite the first write. In a single-
 app with sequential UI interactions, this is not a real concern. IDB transactions would handle
 this correctly, but the complexity is not worth it here.
 
+### 3.11 Why Tailwind CSS v4 with `@theme inline`, not utility classes in JS
+
+The original `styles.css` was hand-written CSS with custom properties (`--bg`, `--accent`, etc.) for theming. It worked but wasn't mobile-first and had no systematic design scale.
+
+**Why Tailwind v4 specifically?**
+
+Tailwind v4 dropped the `tailwind.config.js` file and moved entirely to CSS: you configure tokens inside CSS itself with `@theme`. This makes it trivially compatible with Vite and any bundler — just add `@tailwindcss/vite` plugin, and it works.
+
+**Why not write utility classes directly in TypeScript DOM builders?**
+
+```typescript
+// Tempting approach
+div.className = "flex items-center gap-2 bg-white dark:bg-gray-900 px-4 py-2";
+```
+
+This breaks the separation between behavior (TypeScript) and appearance (CSS). It also means every DOM builder becomes dependent on Tailwind's class names, making refactoring harder. Instead, we use **semantic class names** in TypeScript (`"card-row"`, `"preview-pane"`) and define those classes using Tailwind utilities inside `@layer components` in CSS:
+
+```css
+@layer components {
+  .card-row {
+    @apply flex items-center gap-2 px-4 py-2; /* or write plain CSS */
+  }
+}
+```
+
+This keeps TypeScript clean and CSS authoritative. All existing TypeScript files required zero changes during the Tailwind migration.
+
+**`@theme inline` — design tokens as CSS variables:**
+
+```css
+@theme inline {
+  --color-bg:     var(--bg);
+  --color-accent: var(--accent);
+}
+```
+
+The `inline` keyword means Tailwind generates utility classes that reference the CSS variable directly (e.g., `bg-bg` → `background-color: var(--bg)`). When the variable changes (dark mode toggle), all utilities update automatically — no `dark:` variant needed in markup.
+
+**Dark mode implementation:**
+
+```css
+:root:not([data-theme="light"]) { /* OS dark, unless manually set to light */ }
+[data-theme="dark"] { /* manual override */ }
+```
+
+This two-selector pattern allows both OS-preference and manual override without JavaScript fighting CSS. The toggle button sets `document.documentElement.setAttribute("data-theme", ...)` and persists to `localStorage`.
+
+---
+
+### 3.12 Android back button via `popstate` — no plugin needed
+
+Android's hardware/gesture back button is a frequent source of friction in WebView apps. Tauri 2 doesn't yet expose a first-class back-button event on the TypeScript side. But the WebView forwards back presses to the browser's history API — which fires `popstate` when history goes back.
+
+**The trick:**
+
+```typescript
+// Push one history entry on app start
+window.history.pushState({ tag: "app" }, "");
+
+window.addEventListener("popstate", () => {
+  // Back was pressed — this fires after the history pop
+  // ... handle it, then re-push to stay interactable
+  window.history.pushState({ tag: "app" }, "");
+});
+```
+
+Every `popstate` fires after the browser has already popped one history entry. By immediately re-pushing, the app always has one history entry, so the next back press also fires `popstate`. When we want the app to exit, we simply do **not** re-push — the history stack empties, and Android's Activity exits naturally.
+
+**Priority order in the handler:**
+
+1. If any preview pane is open → close it (DOM class check: `element.classList.contains("is-open")`)
+2. If no preview, first back → show toast + re-push + set `exitPending` flag with 2s timer
+3. If `exitPending` true → clear timer, don't re-push → next back exits the app
+
+No Tauri plugin, no Rust changes, no `finish()` Android call. Works entirely in TypeScript.
+
+**Trade-off:** Relies on WebView forwarding back presses via history. If Tauri's Android implementation changes how it handles back-press interception, this could break.
+
+---
+
+### 3.13 Swipe-to-dismiss: why `passive: false` matters
+
+The first implementation of swipe-to-dismiss used `{ passive: true }` on `touchmove`:
+
+```typescript
+pane.addEventListener("touchmove", (e) => {
+  pane.style.transform = `translateY(${delta}px)`; // visual drag
+}, { passive: true });
+```
+
+This silently failed. `passive: true` tells the browser: "this listener won't call `preventDefault()`." The browser uses this guarantee to start scrolling the element immediately, without waiting for the handler. The result: the browser scrolled the pane's content and our `transform` competed with it — the pane wouldn't move.
+
+**The fix: `passive: false` + explicit `preventDefault()`:**
+
+```typescript
+pane.addEventListener("touchmove", (e) => {
+  if (mode === "dismiss") {
+    e.preventDefault(); // block browser scroll
+    pane.style.transform = `translateY(${Math.max(0, delta)}px)`;
+  }
+  // if mode === "scroll": don't preventDefault → browser scrolls normally
+}, { passive: false });
+```
+
+The `mode` variable is set on the first significant movement (> 5px threshold):
+- Moving **down** when `scrollTop === 0` → `mode = "dismiss"` → we take over
+- Any other direction, or scrolled down → `mode = "scroll"` → browser takes over
+
+This is crucial: with `passive: false` on the entire pane, calling `preventDefault()` unconditionally would break scrolling. We only call it when we've committed to the dismiss gesture. On `touchend`, if `delta > 80px` and mode was dismiss → call `onDismiss()`.
+
+**`overscroll-behavior: none`** on the pane prevents Android's pull-to-refresh from interfering during the gesture.
+
+---
+
 ### 3.9 Error Handling Without Circular Dependencies
 
 The app has multiple modules that need to surface errors to the user as toast notifications:

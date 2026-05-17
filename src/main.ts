@@ -1,15 +1,16 @@
-import type { Card, FetchResult } from "./types.ts";
+import type { Card } from "./types.ts";
 import {
-  saveCards, loadCards,
-  saveMeta, loadMeta,
-  clearCards, clearMeta,
-  formatRelativeTime, isCacheStale,
+  saveCards, saveMeta, clearCards, clearMeta,
+  fetchFromGitHub, fetchLatestCommitSha, loadFromCache,
   type CacheMeta,
 } from "./cache.ts";
 import { getCollectionQtyMap, deduplicateCollection } from "./collection-db.ts";
 import { VirtualList } from "./virtual-list.ts";
 import { buildCardRow } from "./card-row.ts";
-import { applyFilters, extractUniqueOptions, hasActiveFilter, sortCards, type FilterState, type BrowseSortKey } from "./filters.ts";
+import {
+  applyFilters, extractUniqueOptions, hasActiveFilter, sortCards,
+  type FilterState, type BrowseSortKey,
+} from "./filters.ts";
 import {
   getFilterBarRefs, populateDropdowns, readFilterState,
   resetFilters, attachFilterListeners,
@@ -31,10 +32,13 @@ import { exportBackup, importBackup, type ImportResult } from "./export-import.t
 import { showConfirm } from "./confirm-dialog.ts";
 import { showAboutDialog } from "./about-dialog.ts";
 import { showToast } from "./toast.ts";
+import { initThemeToggle } from "./theme.ts";
+import { initBackButton } from "./back-button.ts";
+import {
+  setStartupProgress, setStatus, renderStats, clearStats,
+  renderCacheInfo, showUpdateSpinner,
+} from "./browse-stats.ts";
 import "./styles.css";
-
-const DB_URL     = "https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/cards.json";
-const COMMIT_API = "https://api.github.com/repos/nerif7/vanguard-library-db/commits?path=cards.json&per_page=1";
 
 // ── State ─────────────────────────────────────────────────────────────────────
 let allCards: Card[] = [];
@@ -50,101 +54,12 @@ let collectionQtyMap = new Map<string, number>();
 let tabNav: TabNav | null = null;
 
 // ── DOM refs (Browse tab) ─────────────────────────────────────────────────────
-const refreshBtn      = document.querySelector<HTMLButtonElement>("#refreshBtn")!;
-const clearBtn        = document.querySelector<HTMLButtonElement>("#clearBtn")!;
-const updateSpinnerEl = document.querySelector<HTMLElement>("#updateSpinner")!;
-const statusEl      = document.querySelector<HTMLDivElement>("#status")!;
-const statsEl       = document.querySelector<HTMLDivElement>("#stats")!;
-const cacheInfoEl   = document.querySelector<HTMLDivElement>("#cacheInfo")!;
+const refreshBtn    = document.querySelector<HTMLButtonElement>("#refreshBtn")!;
+const clearBtn      = document.querySelector<HTMLButtonElement>("#clearBtn")!;
 const listContainer = document.querySelector<HTMLDivElement>("#cardListContainer")!;
 const listMetaEl    = document.querySelector<HTMLDivElement>("#listMeta")!;
 const filterBarEl   = document.querySelector<HTMLDivElement>("#filterBar")!;
 const previewPaneEl = document.querySelector<HTMLElement>("#previewPane")!;
-
-// ── Startup progress bar ──────────────────────────────────────────────────────
-
-const progressBarEl = document.getElementById("startupProgress");
-
-function setStartupProgress(pct: number): void {
-  if (!progressBarEl) return;
-  progressBarEl.style.width = `${pct}%`;
-  if (pct >= 100) {
-    setTimeout(() => progressBarEl.classList.add("done"), 300);
-  }
-}
-
-// ── Theme toggle ──────────────────────────────────────────────────────────────
-
-function initThemeToggle(): void {
-  const btn = document.getElementById("themeToggleBtn") as HTMLButtonElement | null;
-  if (!btn) return;
-
-  const saved = localStorage.getItem("theme") as "dark" | "light" | null;
-  if (saved) document.documentElement.setAttribute("data-theme", saved);
-
-  const update = () => {
-    const isDark = document.documentElement.getAttribute("data-theme") === "dark" ||
-      (!document.documentElement.hasAttribute("data-theme") &&
-       window.matchMedia("(prefers-color-scheme: dark)").matches);
-    btn.textContent = isDark ? "☀︎" : "☾";
-    btn.title = isDark ? "Switch to light mode" : "Switch to dark mode";
-  };
-  update();
-
-  btn.addEventListener("click", () => {
-    const current = document.documentElement.getAttribute("data-theme");
-    const isDark  = current === "dark" || (!current && window.matchMedia("(prefers-color-scheme: dark)").matches);
-    const next    = isDark ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", next);
-    localStorage.setItem("theme", next);
-    update();
-  });
-}
-
-// ── Android back button ───────────────────────────────────────────────────────
-
-function initBackButton(): void {
-  window.history.pushState({ tag: "app" }, "");
-
-  let exitPending = false;
-  let exitTimer: ReturnType<typeof setTimeout> | null = null;
-
-  window.addEventListener("popstate", () => {
-    // Priority 1: close any open preview pane
-    if (cardPreview?.isOpen) {
-      cardPreview.hide();
-      window.history.pushState({ tag: "app" }, "");
-      return;
-    }
-    const collPane = document.getElementById("collectionPreviewPane");
-    if (collPane?.classList.contains("is-open")) {
-      closeCollectionPreview();
-      window.history.pushState({ tag: "app" }, "");
-      return;
-    }
-    const wishPane = document.getElementById("wishlistPreviewPane");
-    if (wishPane?.classList.contains("is-open")) {
-      closeWishlistPreview();
-      window.history.pushState({ tag: "app" }, "");
-      return;
-    }
-
-    // Priority 2: double-back to exit
-    if (exitPending) {
-      if (exitTimer) clearTimeout(exitTimer);
-      exitPending = false;
-      return; // don't re-push → next back press exits the app naturally
-    }
-
-    exitPending = true;
-    showToast("Tap sekali lagi untuk keluar");
-    window.history.pushState({ tag: "app" }, "");
-    exitTimer = setTimeout(() => {
-      exitPending = false;
-      window.history.pushState({ tag: "app" }, "");
-    }, 2000);
-  });
-}
 
 // ── Browse tab availability guard ─────────────────────────────────────────────
 
@@ -176,41 +91,7 @@ function updateBrowseTabState(): void {
   }
 }
 
-// ── Fetch helpers ─────────────────────────────────────────────────────────────
-
-async function fetchFromGitHub(): Promise<FetchResult> {
-  const fetchStart = performance.now();
-  const response = await fetch(DB_URL, { cache: "no-cache" });
-  if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-  const text = await response.text();
-  const fetchEnd = performance.now();
-  const totalBytes = new Blob([text]).size;
-  const parseStart = performance.now();
-  const parsed = JSON.parse(text) as Card[];
-  const parseEnd = performance.now();
-  return { cards: parsed, totalBytes, fetchTimeMs: fetchEnd - fetchStart, parseTimeMs: parseEnd - parseStart };
-}
-
-async function fetchLatestCommitSha(): Promise<string | null> {
-  try {
-    const res = await fetch(COMMIT_API, { headers: { Accept: "application/vnd.github+json" } });
-    if (!res.ok) return null;
-    const data = await res.json();
-    return Array.isArray(data) && data[0]?.sha ? data[0].sha : null;
-  } catch { return null; }
-}
-
-async function loadFromCache(): Promise<{ cards: Card[]; meta: CacheMeta } | null> {
-  const [cachedCards, meta] = await Promise.all([loadCards(), loadMeta()]);
-  if (!cachedCards || cachedCards.length === 0 || !meta) return null;
-  return { cards: cachedCards, meta };
-}
-
-// ── Update check + toast ──────────────────────────────────────────────────────
-
-function showUpdateSpinner(visible: boolean): void {
-  updateSpinnerEl.hidden = !visible;
-}
+// ── Update check ──────────────────────────────────────────────────────────────
 
 async function checkForUpdates(meta: CacheMeta): Promise<void> {
   showUpdateSpinner(true);
@@ -222,52 +103,6 @@ async function checkForUpdates(meta: CacheMeta): Promise<void> {
   } finally {
     showUpdateSpinner(false);
   }
-}
-
-// ── Browse UI helpers ─────────────────────────────────────────────────────────
-
-function setStatus(msg: string, kind: "info" | "loading" | "success" | "error" = "info") {
-  statusEl.textContent = msg;
-  statusEl.className = `status status-${kind}`;
-}
-
-function renderStats(opts: {
-  count: number; sizeBytes: number;
-  fetchTimeMs?: number; parseTimeMs?: number;
-  loadFromCacheMs?: number; renderTimeMs?: number;
-}) {
-  const mb = (opts.sizeBytes / 1024 / 1024).toFixed(2);
-  const cells: string[] = [
-    cell("Total cards", opts.count.toLocaleString("id-ID")),
-    cell("Data size", `${mb} MB`),
-  ];
-  if (opts.fetchTimeMs !== undefined)     cells.push(cell("Fetch time", `${opts.fetchTimeMs.toFixed(0)} ms`));
-  if (opts.parseTimeMs !== undefined)     cells.push(cell("Parse time", `${opts.parseTimeMs.toFixed(0)} ms`));
-  if (opts.loadFromCacheMs !== undefined) cells.push(cell("Load cache", `${opts.loadFromCacheMs.toFixed(0)} ms ⚡`));
-  if (opts.renderTimeMs !== undefined)    cells.push(cell("Render list", `${opts.renderTimeMs.toFixed(0)} ms 🚀`));
-  statsEl.innerHTML = cells.join("");
-}
-
-function cell(label: string, value: string): string {
-  return `<div class="stat"><span class="stat-label">${label}</span><span class="stat-value">${value}</span></div>`;
-}
-
-function renderCacheInfo(meta: CacheMeta | null) {
-  if (!meta) {
-    cacheInfoEl.innerHTML = `<span class="cache-empty">Cache empty</span>`;
-    return;
-  }
-  const stale = isCacheStale(meta);
-  cacheInfoEl.innerHTML = `
-    <div class="cache-row">
-      <span class="cache-label">${stale ? "⏰" : "✨"} Cache:</span>
-      <span class="cache-value">${meta.cardCount.toLocaleString("id-ID")} cards, ${(meta.sizeBytes / 1024 / 1024).toFixed(1)} MB</span>
-    </div>
-    <div class="cache-row">
-      <span class="cache-label">Last fetch:</span>
-      <span class="cache-value">${formatRelativeTime(meta.lastFetchAt)} <span class="cache-status">(${stale ? "Stale" : "Fresh"})</span></span>
-    </div>
-  `;
 }
 
 // ── Browse virtual list ───────────────────────────────────────────────────────
@@ -373,7 +208,7 @@ async function handleLoad() {
   setStartupProgress(5);
   setControlsDisabled(true);
   setStatus("Loading…", "loading");
-  statsEl.innerHTML = "";
+  clearStats();
 
   try {
     const startLoad = performance.now();
@@ -395,14 +230,12 @@ async function handleLoad() {
       renderCacheInfo(cached.meta);
       updateListMeta(visibleCards.length, allCards.length, readFilterState(filterRefs!));
 
-      // Non-blocking SHA check — auto-refresh if cards.json has changed
       checkForUpdates(cached.meta).catch(() => {});
     } else {
       await doFetchAndCache();
       setStartupProgress(70);
     }
 
-    // After cards are loaded, init collection + wishlist tabs
     initCollectionTab(allCards, () => { refreshCollectionOverlay().catch(() => {}); });
     initWishlistTab(allCards);
     setStartupProgress(85);
@@ -448,7 +281,7 @@ async function doFetchAndCache() {
 
 async function handleForceRefresh() {
   setControlsDisabled(true);
-  statsEl.innerHTML = "";
+  clearStats();
   try { await doFetchAndCache(); }
   catch (err) { setStatus(`❌ Refresh failed: ${err instanceof Error ? err.message : String(err)}`, "error"); }
   finally { setControlsDisabled(false); updateBrowseTabState(); }
@@ -465,7 +298,7 @@ async function handleClearCache() {
     filterBarEl.style.display = "none";
     filterRefs = null;
     setStatus("🗑️ Cache cleared.", "info");
-    statsEl.innerHTML = "";
+    clearStats();
     renderCacheInfo(null);
     listMetaEl.textContent = "— cards";
   } catch (err) {
@@ -489,14 +322,12 @@ async function init() {
 
   tabNav = new TabNav();
 
-  // Close preview panes on tab switch
   tabNav.onTabSwitch((from, _to) => {
     if (from === "browse") cardPreview?.hide();
     if (from === "collection") closeCollectionPreview();
     if (from === "wishlist") closeWishlistPreview();
   });
 
-  // Wire preview pane for Browse tab
   cardPreview = new CardPreview(previewPaneEl);
   cardPreview.setCallbacks({
     onCollectionChanged: async () => {
@@ -538,17 +369,30 @@ async function init() {
   });
 
   document.getElementById("aboutBtn")?.addEventListener("click", showAboutDialog);
+
   initThemeToggle();
-  initBackButton();
+  initBackButton([
+    {
+      isOpen: () => cardPreview?.isOpen ?? false,
+      close: () => cardPreview?.hide(),
+    },
+    {
+      isOpen: () => document.getElementById("collectionPreviewPane")?.classList.contains("is-open") ?? false,
+      close: () => closeCollectionPreview(),
+    },
+    {
+      isOpen: () => document.getElementById("wishlistPreviewPane")?.classList.contains("is-open") ?? false,
+      close: () => closeWishlistPreview(),
+    },
+  ]);
 
   refreshBtn.addEventListener("click", handleForceRefresh);
   clearBtn.addEventListener("click", handleClearCache);
 
   setupBrowseGuard();
-
   filterBarEl.style.display = "none";
 
-  const meta = await loadMeta();
+  const meta = await loadFromCache().then((c) => c?.meta ?? null);
   renderCacheInfo(meta);
   listMetaEl.textContent = "— cards";
 

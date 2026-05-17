@@ -4,6 +4,8 @@ import { VirtualList } from "./virtual-list.ts";
 import { VirtualGrid } from "./virtual-grid.ts";
 import { buildCardTile } from "./card-tile.ts";
 import { addSwipeToDismiss } from "./swipe-dismiss.ts";
+import { createStatsCollapsible } from "./stats-collapsible.ts";
+import { buildWishlistRow } from "./wishlist-row.ts";
 
 type WishlistSortKey = "name" | "code" | "nation";
 type WishlistViewMode = "list" | "grid";
@@ -37,30 +39,10 @@ let statsBody: HTMLElement | null = null;
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 
-function initStatsCollapsible(): void {
-  statsEl.className = "";
-
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "stats-collapsible-toggle is-open";
-  toggle.innerHTML = `Stats <span class="arrow">›</span>`;
-
-  statsBody = document.createElement("div");
-  statsBody.className = "stats-collapsible-body collection-stats";
-
-  statsEl.appendChild(toggle);
-  statsEl.appendChild(statsBody);
-
-  toggle.addEventListener("click", () => {
-    const nowOpen = toggle.classList.toggle("is-open");
-    statsBody!.classList.toggle("is-hidden", !nowOpen);
-  });
-}
-
 export function initWishlistTab(cards: Card[]): void {
   cardMap = new Map(cards.map((c) => [c.enCardNo, c]));
 
-  initStatsCollapsible();
+  statsBody = createStatsCollapsible(statsEl);
 
   const previewHeader = previewPane.querySelector<HTMLElement>(".preview-header");
   if (previewHeader) addSwipeToDismiss(previewPane, previewHeader, closePreview);
@@ -100,7 +82,7 @@ function setViewMode(mode: WishlistViewMode): void {
     virtualList = new VirtualList<WishlistEntry>(listContainer, {
       rowHeight: 62,
       buffer: 8,
-      renderRow: (entry) => buildWishlistRow(entry, entry.cardCode === selectedCode),
+      renderRow: (entry) => buildWishlistRow(entry, cardMap.get(entry.cardCode), entry.cardCode === selectedCode),
       onRowClick: (entry) => {
         selectedCode = entry.cardCode;
         virtualList!.refresh();
@@ -217,41 +199,6 @@ function applyFilters(): void {
 
 function renderStats(): void {
   statsBody!.innerHTML = `<div class="stat"><span class="stat-label">Wishlist</span><span class="stat-value">${allEntries.length.toLocaleString()}</span></div>`;
-}
-
-// ── Row builder ────────────────────────────────────────────────────────────────
-
-function buildWishlistRow(entry: WishlistEntry, selected: boolean): HTMLElement {
-  const card = cardMap.get(entry.cardCode);
-  const row  = document.createElement("div");
-  row.className = selected ? "card-row card-row--selected" : "card-row";
-
-  const codeEl = document.createElement("div");
-  codeEl.className = "card-row-code"; codeEl.textContent = entry.cardCode;
-
-  const middle = document.createElement("div");
-  middle.className = "card-row-middle";
-
-  const nameEl = document.createElement("div");
-  nameEl.className = "card-row-name"; nameEl.textContent = card?.name ?? entry.cardCode;
-
-  const metaEl = document.createElement("div");
-  metaEl.className = "card-row-meta";
-  if (card) {
-    const parts: string[] = [];
-    if (card.unitType) parts.push(card.unitType);
-    if (card.grade !== null) parts.push(`G${card.grade}`);
-    if (card.nations.length > 0) parts.push(card.nations.join("/"));
-    metaEl.textContent = parts.join(" · ");
-  }
-
-  middle.append(nameEl, metaEl);
-
-  const rarityEl = document.createElement("span");
-  rarityEl.className = "card-row-rarity"; rarityEl.textContent = card?.rarity ?? "—";
-
-  row.append(codeEl, middle, rarityEl);
-  return row;
 }
 
 // ── Preview pane ───────────────────────────────────────────────────────────────

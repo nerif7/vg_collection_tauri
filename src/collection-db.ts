@@ -13,104 +13,68 @@ async function writeFile(path: string, content: string): Promise<void> {
   await invoke<void>("write_text_file", { path, content });
 }
 
-// ── Collection file I/O ───────────────────────────────────────────────────────
+// ── Generic JSON file I/O ─────────────────────────────────────────────────────
 
-async function loadCollectionFile(): Promise<CollectionEntry[]> {
+async function loadJsonFile<T>(filename: string, label: string): Promise<T | null> {
   const dir = await getUserdataDir();
-  const path = `${dir}/collection.json`;
+  const path = `${dir}/${filename}`;
   let content: string | null;
   try {
     content = await readFile(path);
   } catch (err) {
-    showToast(`⚠️ Cannot read collection data: ${err instanceof Error ? err.message : String(err)}`, "error");
-    return [];
+    showToast(`⚠️ Cannot read ${label}: ${err instanceof Error ? err.message : String(err)}`, "error");
+    return null;
   }
-  if (!content) return [];
+  if (!content) return null;
   try {
-    return JSON.parse(content) as CollectionEntry[];
+    return JSON.parse(content) as T;
   } catch {
-    showToast(`⚠️ collection.json is corrupted. To reset, delete: ${path}`, "error");
-    console.error("JSON parse error in collection.json — file may be corrupted");
-    return [];
+    showToast(`⚠️ ${filename} is corrupted. To reset, delete: ${path}`, "error");
+    console.error(`JSON parse error in ${filename} — file may be corrupted`);
+    return null;
   }
+}
+
+async function saveJsonFile<T>(filename: string, data: T): Promise<void> {
+  const dir = await getUserdataDir();
+  const path = `${dir}/${filename}`;
+  try {
+    await writeFile(path, JSON.stringify(data, null, 2));
+  } catch (err) {
+    throw new Error(`Write failed: ${path} — ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+// ── Per-entity file helpers ───────────────────────────────────────────────────
+
+async function loadCollectionFile(): Promise<CollectionEntry[]> {
+  return (await loadJsonFile<CollectionEntry[]>("collection.json", "collection data")) ?? [];
 }
 
 async function saveCollectionFile(entries: CollectionEntry[]): Promise<void> {
-  const dir = await getUserdataDir();
-  const path = `${dir}/collection.json`;
-  try {
-    await writeFile(path, JSON.stringify(entries, null, 2));
-  } catch (err) {
-    throw new Error(`Write failed: ${path} — ${err instanceof Error ? err.message : String(err)}`);
-  }
+  await saveJsonFile("collection.json", entries);
 }
 
-// ── Wishlist file I/O ─────────────────────────────────────────────────────────
-
 async function loadWishlistFile(): Promise<WishlistEntry[]> {
-  const dir = await getUserdataDir();
-  const path = `${dir}/wishlist.json`;
-  let content: string | null;
-  try {
-    content = await readFile(path);
-  } catch (err) {
-    showToast(`⚠️ Cannot read wishlist data: ${err instanceof Error ? err.message : String(err)}`, "error");
-    return [];
-  }
-  if (!content) return [];
-  try {
-    return JSON.parse(content) as WishlistEntry[];
-  } catch {
-    showToast(`⚠️ wishlist.json is corrupted. To reset, delete: ${path}`, "error");
-    console.error("JSON parse error in wishlist.json — file may be corrupted");
-    return [];
-  }
+  return (await loadJsonFile<WishlistEntry[]>("wishlist.json", "wishlist data")) ?? [];
 }
 
 async function saveWishlistFile(entries: WishlistEntry[]): Promise<void> {
-  const dir = await getUserdataDir();
-  const path = `${dir}/wishlist.json`;
-  try {
-    await writeFile(path, JSON.stringify(entries, null, 2));
-  } catch (err) {
-    throw new Error(`Write failed: ${path} — ${err instanceof Error ? err.message : String(err)}`);
-  }
+  await saveJsonFile("wishlist.json", entries);
 }
 
-// ── Locations file I/O ────────────────────────────────────────────────────────
-
 async function loadLocationsFile(): Promise<string[]> {
-  const dir = await getUserdataDir();
-  const path = `${dir}/locations.json`;
-  let content: string | null;
-  try {
-    content = await readFile(path);
-  } catch (err) {
-    showToast(`⚠️ Cannot read locations data: ${err instanceof Error ? err.message : String(err)}`, "error");
-    return [];
-  }
-  if (!content) {
+  const result = await loadJsonFile<string[]>("locations.json", "locations data");
+  if (result === null) {
     const defaults = ["my collection"];
-    await saveLocationsFile(defaults);
+    await saveJsonFile("locations.json", defaults);
     return defaults;
   }
-  try {
-    return JSON.parse(content) as string[];
-  } catch {
-    showToast(`⚠️ locations.json is corrupted. To reset, delete: ${path}`, "error");
-    console.error("JSON parse error in locations.json — file may be corrupted");
-    return [];
-  }
+  return result;
 }
 
 async function saveLocationsFile(locations: string[]): Promise<void> {
-  const dir = await getUserdataDir();
-  const path = `${dir}/locations.json`;
-  try {
-    await writeFile(path, JSON.stringify(locations, null, 2));
-  } catch (err) {
-    throw new Error(`Write failed: ${path} — ${err instanceof Error ? err.message : String(err)}`);
-  }
+  await saveJsonFile("locations.json", locations);
 }
 
 // ── ID generation ─────────────────────────────────────────────────────────────
@@ -194,10 +158,7 @@ export async function deduplicateCollection(): Promise<number> {
     }
   }
 
-  if (mergedCount > 0) {
-    await saveCollectionFile(result);
-  }
-
+  if (mergedCount > 0) await saveCollectionFile(result);
   return mergedCount;
 }
 

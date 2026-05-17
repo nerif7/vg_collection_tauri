@@ -70,11 +70,24 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 **Phase 4 — Distribution (✅ Done)**
 - ✅ ZIP packaged as `VGCollection-v0.1.0-win64.zip` (2.8 MB)
 - ✅ Published as [GitHub Release v0.1.0](https://github.com/nerif7/vg_collection_tauri/releases/tag/v0.1.0)
-- 📋 Android APK build (timeline TBD)
+- ✅ Android dev build running on physical device via `npm run tauri android dev`
 
-**Phase 5+ — Future (📋 Maybe)**
+**Phase 5 — Mobile-first UI (✅ Done)**
+- ✅ Full CSS rewrite with **Tailwind CSS v4** (`@import "tailwindcss"`, `@theme inline`)
+- ✅ Mobile bottom navigation bar (Collection | Wishlist | Browse with icons)
+- ✅ Preview pane: **bottom sheet** on mobile (85dvh, slides up), side panel on desktop
+- ✅ Collapsible stats bar on mobile — tap "Stats ›" to expand/collapse
+- ✅ Filter bar: search-only by default on mobile, "⊟ Filter" button to expand dropdowns
+- ✅ Header: active tab name only on mobile, full app name on desktop
+- ✅ Manual dark/light mode toggle with `localStorage` persistence
+- ✅ Safe area insets (`env(safe-area-inset-*)`) — bottom nav clears system nav bar
+- ✅ Swipe-to-dismiss bottom sheet (scroll-aware, works from anywhere in sheet)
+- ✅ Android back button: closes preview → double-tap exit with toast warning
+- ✅ FOUC prevention: app hidden until JS init completes, then revealed
+- ✅ Android APK: `get_userdata_dir()` uses `app_data_dir()` on Android, portrait locked
+
+**Phase 6+ — Future (📋 Maybe)**
 - 📋 Bulk edit: select multiple entries → change location or delete in bulk
-- 📋 Manual dark/light mode toggle (currently follows OS)
 - 📋 Deck Builder: Vanguard deck validation + export
 
 ## 📊 Performance
@@ -95,6 +108,7 @@ Speedup cache vs network: **~79× faster** (measured, network varies)
 
 - **Framework**: [Tauri 2.x](https://tauri.app/)
 - **Frontend**: Vanilla TypeScript + Vite (no component framework)
+- **Styling**: Tailwind CSS v4 (utility-first, `@theme inline` for design tokens)
 - **Storage**: JSON files in `{exe-dir}/userdata/` (portable — copy folder = copy data)
 - **Backend**: Rust (file I/O commands for portable storage + export/import)
 - **Data source**: [vanguard-library-db](https://github.com/nerif7/vanguard-library-db) (auto-updated weekly)
@@ -120,12 +134,21 @@ npm run tauri dev
 npm run dev   # buka http://localhost:1420
 ```
 
-### Build Production
+### Build Production (Windows)
 ```bash
 npm run tauri build
 ```
 
 Output: `src-tauri/target/release/bundle/`
+
+### Android Dev (USB debugging)
+```cmd
+set ANDROID_HOME=C:\Android\SDK
+set NDK_HOME=C:\Android\SDK\ndk\30.0.14904198
+npm run tauri android dev
+```
+
+Prerequisites Android: Android Studio, SDK Platform 34, NDK 30.x, USB debugging enabled on device.
 
 ## 📂 Struktur Project
 
@@ -154,7 +177,8 @@ vg_collection_tauri/
 │   ├── export-import.ts    # Export/Import backup logic (Tauri invoke + import dialog)
 │   ├── about-dialog.ts     # About dialog (version, links, GitHub)
 │   ├── toast.ts            # Toast notification (shared across modules)
-│   └── styles.css          # Light/dark theme
+│   ├── swipe-dismiss.ts    # Swipe-to-dismiss utility for bottom sheet (mobile)
+│   └── styles.css          # Tailwind CSS v4 — design tokens, responsive layout, dark mode
 ├── src-tauri/              # Rust backend
 │   ├── src/
 │   ├── Cargo.toml

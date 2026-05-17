@@ -11,6 +11,7 @@ import { renderGroupedView } from "./collection-grouped.ts";
 import { openLocationManager } from "./location-manager.ts";
 import { buildEditSection } from "./collection-edit.ts";
 import { addSwipeToDismiss } from "./swipe-dismiss.ts";
+import { createStatsCollapsible } from "./stats-collapsible.ts";
 
 // ── Types ──────────────────────────────────────────────────────────────────────
 
@@ -52,31 +53,11 @@ let statsBody: HTMLElement | null = null;
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 
-function initStatsCollapsible(): void {
-  statsEl.className = "";
-
-  const toggle = document.createElement("button");
-  toggle.type = "button";
-  toggle.className = "stats-collapsible-toggle is-open";
-  toggle.innerHTML = `Stats <span class="arrow">›</span>`;
-
-  statsBody = document.createElement("div");
-  statsBody.className = "stats-collapsible-body collection-stats";
-
-  statsEl.appendChild(toggle);
-  statsEl.appendChild(statsBody);
-
-  toggle.addEventListener("click", () => {
-    const nowOpen = toggle.classList.toggle("is-open");
-    statsBody!.classList.toggle("is-hidden", !nowOpen);
-  });
-}
-
 export function initCollectionTab(cards: Card[], onChange?: () => void): void {
   cardMap = new Map(cards.map((c) => [c.enCardNo, c]));
   onCollectionChanged = onChange ?? null;
 
-  initStatsCollapsible();
+  statsBody = createStatsCollapsible(statsEl);
 
   const previewHeader = previewPane.querySelector<HTMLElement>(".preview-header");
   if (previewHeader) addSwipeToDismiss(previewPane, previewHeader, closePreview);

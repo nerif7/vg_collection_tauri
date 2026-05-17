@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import type { Card } from "./types.ts";
+import type { Card, FetchResult } from "./types.ts";
 import { showToast } from "./toast.ts";
+
+const DB_URL     = "https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/cards.json";
+const COMMIT_API = "https://api.github.com/repos/nerif7/vanguard-library-db/commits?path=cards.json&per_page=1";
 
 export interface CacheMeta {
   lastFetchAt:   number;
@@ -106,6 +109,36 @@ export async function clearMeta(): Promise<void> {
   } catch (err) {
     throw new Error(`Write failed: ${path} — ${err instanceof Error ? err.message : String(err)}`);
   }
+}
+
+// ── GitHub fetch helpers ──────────────────────────────────────────────────────
+
+export async function fetchFromGitHub(): Promise<FetchResult> {
+  const fetchStart = performance.now();
+  const response = await fetch(DB_URL, { cache: "no-cache" });
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  const text = await response.text();
+  const fetchEnd = performance.now();
+  const totalBytes = new Blob([text]).size;
+  const parseStart = performance.now();
+  const parsed = JSON.parse(text) as Card[];
+  const parseEnd = performance.now();
+  return { cards: parsed, totalBytes, fetchTimeMs: fetchEnd - fetchStart, parseTimeMs: parseEnd - parseStart };
+}
+
+export async function fetchLatestCommitSha(): Promise<string | null> {
+  try {
+    const res = await fetch(COMMIT_API, { headers: { Accept: "application/vnd.github+json" } });
+    if (!res.ok) return null;
+    const data = await res.json();
+    return Array.isArray(data) && data[0]?.sha ? data[0].sha : null;
+  } catch { return null; }
+}
+
+export async function loadFromCache(): Promise<{ cards: Card[]; meta: CacheMeta } | null> {
+  const [cachedCards, meta] = await Promise.all([loadCards(), loadMeta()]);
+  if (!cachedCards || cachedCards.length === 0 || !meta) return null;
+  return { cards: cachedCards, meta };
 }
 
 // ── Utility ───────────────────────────────────────────────────────────────────

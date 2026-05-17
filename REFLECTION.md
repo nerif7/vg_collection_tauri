@@ -205,6 +205,107 @@ be the most visually prominent element in a dialog — that draws the eye away f
 intended action. Name your CSS classes semantically (`btn-neutral`, `btn-danger`) not
 positionally (`btn-secondary`).
 
+### Bug 8: Swipe-to-dismiss silently failed because of `passive: true` ✅ Fixed
+
+**What happened:** The bottom sheet swipe gesture on Android did nothing. Touching the
+preview pane and dragging downward scrolled the sheet's content instead of dismissing it.
+
+**Root cause:** The `touchmove` listener was registered with `{ passive: true }` (the
+browser default). A passive listener cannot call `e.preventDefault()` — the browser
+ignores the call and scrolls the element anyway. So the scroll and the dismiss transform
+competed, and the scroll always won.
+
+The second root cause: the listener was only attached to the drag handle (`.preview-header`),
+not the entire pane. If the user started the swipe from inside the content area, no listener
+fired at all.
+
+**How it was found:** Android device testing — the feature appeared to work in desktop
+DevTools (mouse drag), because mouse events don't have the `passive` constraint that touch
+events have.
+
+**The fix:**
+1. Moved the `touchstart`/`touchmove`/`touchend` listeners to the entire pane element.
+2. Changed `touchmove` to `{ passive: false }` so `e.preventDefault()` is allowed.
+3. Added a three-mode state machine (`none` → `dismiss`/`scroll`) — determined on the
+   first 5px of movement. Only call `preventDefault()` in "dismiss" mode; let the browser
+   handle scroll events in "scroll" mode. This prevents the gesture from blocking all
+   vertical scrolling inside the sheet.
+
+```typescript
+pane.addEventListener("touchmove", (e) => {
+  const delta = e.touches[0].clientY - startY;
+  if (mode === "none") {
+    if (Math.abs(delta) < 5) return;
+    mode = delta > 0 && pane.scrollTop <= 0 ? "dismiss" : "scroll";
+  }
+  if (mode === "dismiss") {
+    e.preventDefault(); // only blocks scroll when we're in dismiss mode
+    pane.style.transform = `translateY(${Math.max(0, delta)}px)`;
+  }
+}, { passive: false });
+```
+
+**Lesson:** `passive: true` is the browser default for `touchmove` — it exists to
+protect scroll performance. Any gesture that needs to *prevent* the default scroll must
+explicitly opt out with `{ passive: false }`. DevTools mouse simulation doesn't expose
+this constraint; always test gesture code on a real device.
+
+---
+
+### Bug 9: Bottom nav overlapped Android system navigation bar ✅ Fixed
+
+**What happened:** On Android, the bottom navigation bar (Collection | Wishlist | Browse)
+was partially hidden behind the system navigation bar (back/home/recents buttons). The
+app header was also clipped by the status bar at the top.
+
+**Root cause:** The `<meta name="viewport">` tag did not include `viewport-fit=cover`.
+Without it, the browser restricts layout to the "safe" area automatically — but `env(safe-area-inset-*)` CSS variables return `0px`, so any manual safe-area CSS is also
+ineffective. The bottom nav had no bottom padding to clear the system nav bar.
+
+**The fix:**
+1. Added `viewport-fit=cover` to the meta viewport tag — now the WebView fills the entire
+   screen including behind system bars.
+2. Defined `--safe-top` and `--safe-bottom` CSS variables in `:root` using
+   `env(safe-area-inset-top/bottom, 0px)`.
+3. Applied them everywhere that needed clearing:
+   - `.app` top padding: `calc(16px + var(--safe-top))`
+   - `.bottom-nav` height: `calc(var(--bottom-nav-h) + var(--safe-bottom))`
+   - `.bottom-nav` bottom padding: `var(--safe-bottom)`
+   - `.toast` bottom: `calc(var(--bottom-nav-h) + var(--safe-bottom) + 16px)`
+   - `.preview-pane` bottom: `calc(var(--bottom-nav-h) + var(--safe-bottom))`
+
+**Lesson:** `viewport-fit=cover` is the gate that enables safe area insets. Without it,
+the CSS variables return zero even if they're referenced. The fix is two parts: turn on
+the viewport setting, then apply the inset variables to every element that needs to be
+aware of system bars.
+
+---
+
+### Bug 10: FOUC (Flash of Unstyled Content) on Android ✅ Fixed
+
+**What happened:** On Android, the app briefly showed unstyled plain HTML — black text
+on white, no layout — for a visible moment at startup before the actual UI appeared.
+
+**Root cause:** In Vite dev mode, CSS is injected via JavaScript (a `<style>` tag is
+created by a JS module). There's a brief window between "HTML parsed" and "CSS JS executed"
+where the browser renders the page without styles.
+
+**The fix:** Added a `<style id="fouc-guard">body { visibility: hidden }</style>` block
+directly in `<head>` of `index.html`. This is parsed synchronously — the page is invisible
+from the first frame. After `handleLoad()` completes in `main.ts`, the guard is removed:
+
+```typescript
+document.getElementById("fouc-guard")?.remove();
+```
+
+**Lesson:** When CSS is loaded via JavaScript (as in Vite dev mode or CSS-in-JS), it
+arrives after the HTML is painted. A tiny synchronous `<style>` block in `<head>` hides
+the page before any paint, then JS reveals it after everything is ready. In Vite production
+builds, CSS is bundled as a static file and injected as a `<link>`, so FOUC doesn't occur
+there — but the guard is harmless.
+
+---
+
 ### Design Note: Undefined CSS variable `--danger` found
 
 While adding `.toast--error` styles, discovered that `.location-delete-btn:hover` was using
@@ -317,6 +418,39 @@ The constraint forces you to think clearly: "When does this UI need to update? W
 triggers it?" With React, re-renders happen automatically (sometimes too often), which
 makes it easy to write code without fully understanding the data flow.
 
+### Android environment setup is harder than the code
+
+Setting up the Android build environment required installing Android Studio, SDK Platform
+34, NDK 30.x, creating a virtual device, enabling USB debugging on the physical device,
+and setting two environment variables (`ANDROID_HOME`, `NDK_HOME`) in the same terminal
+session before running `tauri android dev`. Forgetting any one of these steps causes a
+cryptic error.
+
+The specific trap I hit: running `tauri android dev` in a new PowerShell session without
+setting the env vars first. Tauri fell back to `AppData\Local\Android\Sdk`, triggered an
+NDK reinstall, then failed with license errors. The fix was to use CMD (not PowerShell)
+and set both vars before running the command.
+
+**Lesson:** Android toolchain setup is a significant upfront cost. Document the exact
+commands, in the exact shell, with the exact var names — not just "set up Android." Once
+it works, don't change shells.
+
+---
+
+### CSS safe area insets are zero until `viewport-fit=cover`
+
+Before Phase 5, I assumed `env(safe-area-inset-bottom)` would return a nonzero value on
+Android if I referenced it in CSS. It returns `0px` unless the viewport meta tag includes
+`viewport-fit=cover`. This isn't obvious from the property name — it looks like a read of
+a system value, but it's actually gated on whether the WebView has opted into the
+full-screen layout mode.
+
+**Lesson:** `env(safe-area-inset-*)` is a two-step opt-in: first in HTML
+(`viewport-fit=cover`), then in CSS (using the variable). One without the other is
+silently ineffective.
+
+---
+
 ### ResizeObserver is the correct tool for responsive layout
 
 Before using `ResizeObserver`, I tried handling grid column changes with `window.resize`.
@@ -334,6 +468,8 @@ layout.
 - Had never implemented virtual rendering
 - Had only used TypeScript with React (where generics were mostly hidden)
 - Thought Tauri was "just Electron with Rust instead of Node"
+- Had never built a mobile-responsive UI without a component framework
+- Had never handled Android-specific issues (safe area, back button, touch events)
 
 **After this project, I:**
 - Understand IndexedDB transactions, indexes, and schema migration at a low level
@@ -341,14 +477,21 @@ layout.
 - Use TypeScript generics naturally and understand when they add value
 - Understand the Tauri architecture (WebView + Rust process + IPC bridge) and how it
   differs from Electron (no bundled Chromium)
-- Have written ~2,000 lines of vanilla TypeScript without a framework and found it
+- Have written ~2,500 lines of vanilla TypeScript without a framework and found it
   readable and maintainable
+- Can build a full mobile-responsive layout with Tailwind CSS v4 — bottom nav, bottom
+  sheet, safe area insets, dark mode — without any component framework
+- Understand the `passive` touch event constraint at a practical level — and that desktop
+  DevTools mouse simulation hides this entire class of bugs
+- Know how Android system bars interact with WebView layout (viewport-fit, safe-area-inset)
+- Can intercept the Android back button via the History API (`pushState` / `popstate`)
+  without any native plugin
 
 **What I'm still learning:**
 - Rust — currently enough to understand Tauri's backend but not enough to write Rust
-  commands confidently. Phase 3.5 will push this forward.
-- Performance profiling — I know how to use DevTools but haven't systematically measured
-  this app. Adding real numbers to the performance section of LEARN.md is on the list.
+  commands confidently without reference docs.
+- Performance profiling on mobile — Android has different bottlenecks than desktop (GPU
+  compositing, JS JIT warmup, WebView rendering pipeline).
 - Testing — this project has no automated tests. The filters module (`filters.ts`) is
   pure and easily testable; writing tests for it would be a good next step.
 
