@@ -25,13 +25,15 @@ export interface VirtualListOptions<T> {
   onRowLongPress?: (item: T, index: number, x: number, y: number) => void;
   /** Optional: pesan saat list kosong. */
   emptyMessage?: string;
+  /** Optional: factory untuk custom empty-state element (overrides emptyMessage). */
+  emptyNode?: () => HTMLElement;
 }
 
 export class VirtualList<T> {
   private container: HTMLElement;
   private spacer: HTMLDivElement;
   private items: T[] = [];
-  private options: Required<Omit<VirtualListOptions<T>, "onRowLongPress">> & Pick<VirtualListOptions<T>, "onRowLongPress">;
+  private options: Required<Omit<VirtualListOptions<T>, "onRowLongPress" | "emptyNode">> & Pick<VirtualListOptions<T>, "onRowLongPress" | "emptyNode">;
   private scrollHandler: () => void;
   private rafId: number | null = null;
 
@@ -135,9 +137,15 @@ export class VirtualList<T> {
 
     // Handle empty state
     if (total === 0) {
-      this.spacer.innerHTML = `
-        <div class="virtual-list-empty">${this.escapeHtml(this.options.emptyMessage)}</div>
-      `;
+      this.spacer.innerHTML = "";
+      if (this.options.emptyNode) {
+        this.spacer.appendChild(this.options.emptyNode());
+      } else {
+        const el = document.createElement("div");
+        el.className = "virtual-list-empty";
+        el.textContent = this.options.emptyMessage;
+        this.spacer.appendChild(el);
+      }
       return;
     }
 
@@ -209,9 +217,4 @@ export class VirtualList<T> {
     });
   }
 
-  private escapeHtml(s: string): string {
-    const div = document.createElement("div");
-    div.textContent = s;
-    return div.innerHTML;
-  }
 }

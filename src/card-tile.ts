@@ -17,6 +17,7 @@ export function buildCardTile(
     img.src       = card.imageUrlEn;
     img.alt       = card.name;
     img.loading   = "lazy";
+    img.decoding  = "async";
     img.className = "card-tile-img";
     imgWrap.appendChild(img);
   } else {

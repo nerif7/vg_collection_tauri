@@ -5,13 +5,14 @@ export interface VirtualGridOptions<T> {
   renderCell: (item: T, index: number) => HTMLElement;
   onCellClick?: (item: T) => void;
   emptyMessage?: string;
+  emptyNode?: () => HTMLElement;
 }
 
 export class VirtualGrid<T> {
   private container: HTMLElement;
   private spacer: HTMLDivElement;
   private items: T[] = [];
-  private opts: Required<VirtualGridOptions<T>>;
+  private opts: Required<Omit<VirtualGridOptions<T>, "emptyNode">> & Pick<VirtualGridOptions<T>, "emptyNode">;
   private cols = 3;
   private scrollHandler: () => void;
   private rafId: number | null = null;
@@ -89,8 +90,15 @@ export class VirtualGrid<T> {
 
   private _render(): void {
     if (this.items.length === 0) {
-      const esc = (s: string) => { const d = document.createElement("div"); d.textContent = s; return d.innerHTML; };
-      this.spacer.innerHTML = `<div class="virtual-list-empty">${esc(this.opts.emptyMessage)}</div>`;
+      this.spacer.innerHTML = "";
+      if (this.opts.emptyNode) {
+        this.spacer.appendChild(this.opts.emptyNode());
+      } else {
+        const el = document.createElement("div");
+        el.className = "virtual-list-empty";
+        el.textContent = this.opts.emptyMessage;
+        this.spacer.appendChild(el);
+      }
       return;
     }
 

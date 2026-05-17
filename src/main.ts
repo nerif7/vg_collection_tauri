@@ -16,6 +16,24 @@ import {
   resetFilters, attachFilterListeners, setFilterActiveIndicator,
   type FilterBarRefs,
 } from "./filter-bar.ts";
+
+function makeBrowseEmptyNode(): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.className = "virtual-list-empty";
+  const text = document.createElement("p");
+  text.textContent = "No cards match — try clearing filters";
+  const btn = document.createElement("button");
+  btn.type = "button";
+  btn.className = "empty-clear-btn";
+  btn.textContent = "Clear filters";
+  btn.addEventListener("click", () => {
+    if (!filterRefs) return;
+    resetFilters(filterRefs);
+    refreshList();
+  });
+  wrap.append(text, btn);
+  return wrap;
+}
 import { CardPreview } from "./card-preview.ts";
 import { VirtualGrid } from "./virtual-grid.ts";
 import { buildCardTile } from "./card-tile.ts";
@@ -126,7 +144,7 @@ function refreshList() {
           virtualList!.refresh();
           cardPreview!.show(card);
         },
-        emptyMessage: "No cards match the filter",
+        emptyNode: makeBrowseEmptyNode,
       });
     }
     virtualList.setItems(visibleCards);
@@ -145,7 +163,7 @@ function refreshList() {
           virtualGrid!.refresh();
           cardPreview!.show(card);
         },
-        emptyMessage: "No cards match the filter",
+        emptyNode: makeBrowseEmptyNode,
       });
     }
     virtualGrid.setItems(visibleCards);

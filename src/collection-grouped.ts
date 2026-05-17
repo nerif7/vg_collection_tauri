@@ -1,6 +1,8 @@
 import type { Card, CollectionEntry } from "./types.ts";
 import { buildCollectionRow } from "./collection-row.ts";
 
+let _lastSig = "";
+
 export function renderGroupedView(
   container: HTMLElement,
   entries: CollectionEntry[],
@@ -10,6 +12,12 @@ export function renderGroupedView(
   onEntryClick: (entry: CollectionEntry) => void,
   selectedId: number | null,
 ): void {
+  const sig = entries.map((e) => `${e.id}:${e.quantity}`).join(",")
+    + `|${selectedId}|`
+    + [...collapsed].sort().join(",");
+  if (sig === _lastSig) return;
+  _lastSig = sig;
+
   container.innerHTML = "";
 
   if (entries.length === 0) {

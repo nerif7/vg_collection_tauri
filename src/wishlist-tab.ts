@@ -233,7 +233,7 @@ function renderPreview(entry: WishlistEntry): void {
     wrap.className = "preview-image-wrap";
     const img = document.createElement("img");
     img.src = card.imageUrlEn; img.alt = card.name;
-    img.className = "preview-image"; img.loading = "lazy";
+    img.className = "preview-image"; img.loading = "lazy"; img.decoding = "async";
     wrap.appendChild(img);
     previewBody.appendChild(wrap);
   }

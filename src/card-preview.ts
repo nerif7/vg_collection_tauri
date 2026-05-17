@@ -67,6 +67,7 @@ export class CardPreview {
       img.alt = card.name;
       img.className = "preview-image";
       img.loading = "lazy";
+      img.decoding = "async";
       img.title = "Click to enlarge";
       img.addEventListener("click", () => this._showLightbox(card.imageUrlEn!, card.name));
       imageWrap.appendChild(img);

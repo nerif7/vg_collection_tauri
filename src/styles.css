@@ -1179,6 +1179,22 @@
     .card-list-container::-webkit-scrollbar-thumb:hover { background: rgba(127,127,127,0.45); }
   }
 
+  /* ── Empty state clear button ── */
+  .virtual-list-empty p { margin-bottom: 12px; }
+  .empty-clear-btn {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+    padding: 5px 16px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    min-height: unset;
+  }
+  @media (hover: hover) {
+    .empty-clear-btn:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+  }
+
   /* ── Status retry button ── */
   .status-retry-btn {
     margin-left: 10px;
