@@ -30,9 +30,9 @@ A **Cardfight!! Vanguard** card database browser and personal collection tracker
 
 ```
 src/
-├── main.ts               # App orchestration, tab routing, global state
-├── cache.ts              # File-based card DB cache (userdata/cache/)
-├── collection-db.ts      # JSON file CRUD for collection + wishlist + locations
+├── main.ts               # App orchestration, tab routing, global state (Browse tab)
+├── cache.ts              # File-based card DB cache + GitHub fetch helpers (fetchFromGitHub, fetchLatestCommitSha, loadFromCache)
+├── collection-db.ts      # JSON file CRUD for collection + wishlist + locations (generic loadJsonFile<T>/saveJsonFile<T>)
 ├── filters.ts            # Pure filter logic — no DOM, no side effects, testable
 ├── filter-bar.ts         # Filter UI wiring only (reads filters.ts, writes DOM)
 ├── virtual-list.ts       # Generic virtualized list renderer (RAF-throttled)
@@ -40,6 +40,7 @@ src/
 ├── card-row.ts           # Card row DOM builder (Browse list view)
 ├── card-tile.ts          # Card tile DOM builder (grid view — all tabs)
 ├── collection-row.ts     # Collection row DOM builder
+├── wishlist-row.ts       # Wishlist row DOM builder
 ├── collection-grouped.ts # Grouped view renderer (collapsible location groups)
 ├── card-preview.ts       # Preview pane + lightbox (Browse tab)
 ├── tab-nav.ts            # Tab navigation wiring
@@ -51,8 +52,13 @@ src/
 ├── export-import.ts      # Export/Import backup logic (Tauri invoke + import dialog)
 ├── about-dialog.ts       # About dialog (version, links, GitHub)
 ├── toast.ts              # Toast notification — shared across modules
+├── stats-collapsible.ts  # Shared collapsible stats widget (used by Collection + Wishlist tabs)
+├── browse-stats.ts       # Browse tab UI helpers — setStatus, renderStats, renderCacheInfo, showUpdateSpinner
+├── theme.ts              # Dark/light mode toggle (localStorage persistence)
+├── back-button.ts        # Android back button handler — close previews, double-back exit (BackPane interface)
+├── swipe-dismiss.ts      # Swipe-to-dismiss utility for bottom sheet (mobile)
 ├── types.ts              # All TypeScript interfaces and types
-└── styles.css            # Light/dark theme styling
+└── styles.css            # Tailwind CSS v4 — design tokens, responsive layout, dark mode
 
 src-tauri/src/
 ├── lib.rs              # Tauri app builder, plugin registration, file I/O commands
@@ -63,8 +69,11 @@ src-tauri/src/
 
 - **Vanilla TS over React/Vue** — keeps bundle tiny, no JS component framework; Tailwind CSS v4 is used for styling (CSS utility library, not a component framework)
 - **JSON files in `{exe-dir}/userdata/`** — portable storage; copy folder = copy data, delete folder = clean uninstall; custom Rust commands (`get_userdata_dir`, `read_text_file`, `write_text_file`) instead of `tauri-plugin-fs`
+- **Generic JSON I/O in `collection-db.ts`** — `loadJsonFile<T>(filename, label)` / `saveJsonFile<T>(filename, data)` handle error toasts, parse errors, and path construction once; per-entity functions are thin wrappers (3 lines each)
+- **GitHub fetch in `cache.ts`** — `fetchFromGitHub`, `fetchLatestCommitSha`, `loadFromCache` live alongside cache I/O because they form the complete "card data access layer" — load from disk or fetch from network
 - **Pure filter module** — `filters.ts` has zero DOM dependencies; easy to test and reuse
 - **Generic `VirtualList<T>`** — parameterized by row height + render function; works with any data type
+- **Callbacks over imports for cross-tab notifications** — `initCollectionTab(cards, onChange?)` and `initBackButton(panes: BackPane[])` receive callbacks at init time, avoiding circular imports between tab modules and `main.ts`
 
 ---
 
@@ -304,66 +313,74 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 - ✅ Published as GitHub Release — `v0.1.0` tag on `nerif7/vg_collection_tauri`
 - ✅ Android dev build running on physical device via `npm run tauri android dev`
 
-### Phase 5 — Mobile-first UI (Tailwind CSS v4) 🔄 In Progress
+### Phase 5 — Mobile-first UI (Tailwind CSS v4) ✅ Done
 
-**Scope:** Full CSS rewrite (`styles.css` → Tailwind utilities) + responsive mobile layout. Desktop layout upgraded too.
+- ✅ Full CSS rewrite with Tailwind CSS v4 (`@import "tailwindcss"`, `@theme inline`)
+- ✅ Mobile bottom navigation bar (Collection | Wishlist | Browse with icons)
+- ✅ Preview pane: bottom sheet on mobile (85dvh, slides up), side panel on desktop
+- ✅ Collapsible stats bar on mobile — tap "Stats ›" to expand/collapse
+- ✅ Filter bar: search-only by default on mobile, "⊟ Filter" button to expand dropdowns
+- ✅ Header: active tab name only on mobile, full app name on desktop
+- ✅ Manual dark/light mode toggle with localStorage persistence
+- ✅ Safe area insets (`env(safe-area-inset-*)`) — bottom nav clears system nav bar
+- ✅ Swipe-to-dismiss bottom sheet (scroll-aware, works from anywhere in sheet)
+- ✅ Android back button: closes preview → double-tap exit with toast warning
+- ✅ FOUC prevention: app hidden until JS init completes, then revealed
+- ✅ Android APK: `get_userdata_dir()` uses `app_data_dir()` on Android, portrait locked
 
-#### Locked decisions
+**Phase 5.5 — Refactor (✅ Done)**
+- ✅ Extracted `stats-collapsible.ts` — eliminated 100% copy-paste between Collection + Wishlist tabs
+- ✅ Extracted `theme.ts`, `back-button.ts`, `browse-stats.ts` — `main.ts` 558 → 353 lines
+- ✅ Extracted `wishlist-row.ts` — row builder now consistent with other tab row builders
+- ✅ Refactored `collection-db.ts` — generic `loadJsonFile<T>`/`saveJsonFile<T>` eliminates repeated error handling
+- ✅ Moved GitHub fetch helpers to `cache.ts` — complete card data access layer in one module
 
-**Breakpoints:**
-- Mobile-first: design from 360px up
-- `sm` (640px): tablet adjustments
-- `md` (768px+): desktop layout kicks in (side preview pane, top tabs, inline filters)
+### Phase 6 — UX Polish (📋 Next)
 
-**Navigation:**
-- Mobile: **bottom navigation bar** — Collection | Wishlist | Browse (with icons)
-- Desktop: top tab bar (existing behavior)
+**Goal:** Ship v0.2.0 (Windows exe + Android APK) after this phase.
 
-**Preview pane:**
-- Mobile: **bottom sheet** (slide up, ~80% screen height, swipe down to dismiss)
-- Desktop: side panel (existing behavior)
+**v0.2.0 release plan:**
+- Changelog: Phase 5 mobile-first UI + Android APK + internal refactor (as "improved stability")
+- Windows: portable `.exe` on GitHub Releases
+- Android: release APK (signed, no USB debug needed) on same or separate GitHub Release
+- Version bump: `0.1.0` → `0.2.0` in `tauri.conf.json` + `package.json`
 
-**Filter bar (Browse tab):**
-- Mobile: search input full-width + funnel icon (🔽) to expand filters — hidden by default
-- Desktop: all filters inline (existing behavior)
+#### 6.1 Animasi & Transisi
+- Tab switch: fade or slide transition between Collection / Wishlist / Browse
+- Preview pane (bottom sheet): smoother open/close spring animation
+- Loading states: skeleton rows while collection/wishlist loads (instead of blank)
+- Button press feedback: subtle scale or ripple on mobile tap targets
 
-**Card list default view:**
-- Mobile: **grid 2 columns** (portrait card tiles with ×N badge)
-- Desktop: list view (existing behavior)
+#### 6.2 Empty States
+- Collection tab empty: illustration + "Add cards from Browse tab" call-to-action
+- Wishlist tab empty: illustration + "Browse cards to add to wishlist"
+- Browse tab (no filter results): "No cards match — try clearing filters" with clear button
+- Offline Browse: already handled, but can be improved with a retry button
 
-**Header:**
-- Mobile: active tab name only (e.g. "Collection") + About (?) button right
-- Desktop: full app name (existing behavior)
+#### 6.3 Error Handling Improvements
+- GitHub fetch fail: show a **Retry** button inline in the status bar (instead of just text)
+- Network timeout: distinguish "slow network" from "offline" in error message
+- More descriptive toast messages — include actionable hints where possible
 
-**Stats bar (Collection/Wishlist):**
-- Mobile: **collapsible** — tap to expand/collapse
-- Desktop: always visible (existing behavior)
+#### 6.4 Accessibility
+- Focus trap in all modals (confirm dialog, import dialog, location manager)
+- Keyboard navigation: Tab/Enter/Escape work on all interactive elements
+- ARIA labels on icon-only buttons (Filter toggle, view toggle, theme toggle)
 
-**Add to Collection form (Browse preview):**
-- Mobile: inside bottom sheet (qty controls + location input + Add button)
-- Desktop: existing inline form in side pane
+#### 6.5 Quick Actions (mobile UX)
+- **Long-press on collection row** → context menu: Edit, Move, Delete (skip opening preview for common actions)
+- **Lightbox back button + swipe dismiss** — Android back button and swipe-down should close the lightbox (full-screen card image), same as it does for preview panes; currently lightbox has no gesture/back-button support
+  - Implementation: expose `isLightboxOpen()` / `hideLightbox()` on `CardPreview` class, add to `BackPane[]` in `main.ts`
 
-**Orientation:** Portrait only (locked via Android manifest)
+#### 6.6 Filter Active Indicator
+- Show a dot/badge on the "⊟ Filter" button when any filter is active (nation, type, etc.)
+- Makes it obvious why the card list looks shorter than expected
 
-**Dark/Light mode:** Manual toggle in header (persist to `localStorage`); replaces OS-only behavior
-
-**Export/Import:** Tauri native file dialog — works on both Windows and Android
-
-#### Implementation order
-1. Install Tailwind CSS v4 + Vite plugin
-2. Migrate `styles.css` → Tailwind (desktop first, keep existing layout working)
-3. Add mobile bottom nav bar (responsive, replaces top tabs on mobile)
-4. Add bottom sheet component (used by preview pane on mobile)
-5. Make filter bar responsive (funnel button → filter sheet on mobile)
-6. Responsive stats bar (collapsible on mobile)
-7. Grid 2-col default on mobile
-8. Dark/light mode toggle
-9. Android manifest: lock portrait orientation
-
-### Phase 6+ — Future Features (maybe, not in scope now)
+### Phase 7+ — Future Features (maybe, not in scope now)
 
 - **Deck Builder**: Vanguard deck validation (max 4 copies per card name, 50 cards total), deck export as text list
 - **Bulk edit**: Select multiple collection entries → change location or delete in bulk
+- **Stats breakdown**: Per-set, per-nation, per-rarity collection analytics
 
 ---
 
@@ -419,7 +436,7 @@ Measured on Windows 11, 24,262 cards / 10.09 MB:
 | Item | Location | Priority | Notes |
 |---|---|---|---|
 | Grouped view not virtualized | `collection-grouped.ts` | Medium | Full DOM re-render; may lag at 500+ entries |
-| `btn-secondary` naming | `styles.css` | Low | Will be resolved in Tailwind CSS v4 rewrite (Phase 5) |
+| No automated tests | `filters.ts` (best candidate) | Low | Pure module, zero DOM — easiest to test; no test runner set up yet |
 
 ---
 
