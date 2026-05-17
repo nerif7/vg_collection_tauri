@@ -1397,5 +1397,77 @@ refactoring grows with file size.
 
 ---
 
-*Last updated: Phase 3 complete + Phase 3.5 planned.*
+---
+
+### 3.14 Focus trap: why `releaseTrap = () => {}` before the assignment
+
+`trapFocus(container)` auto-focuses the first focusable element and returns a cleanup function. In `confirm-dialog.ts`, the cleanup is stored in `releaseTrap` and called from `cleanup(result)`:
+
+```typescript
+let releaseTrap = () => {};
+const cleanup = (result: boolean) => {
+  _overlay!.classList.remove("is-open");
+  releaseTrap();  // ← releaseTrap is referenced here...
+  document.removeEventListener("keydown", onKeydown);
+  resolve(result);
+};
+document.addEventListener("keydown", onKeydown);
+releaseTrap = trapFocus(dialog);  // ← ...but assigned HERE
+```
+
+`cleanup` is defined before `releaseTrap = trapFocus(dialog)`. Initializing `releaseTrap` as a no-op `() => {}` prevents a `ReferenceError` if `cleanup` were somehow called before the assignment, and satisfies TypeScript's type checker (`() => void` is a valid default). When `cleanup` actually runs (from a button click or Esc keydown), `releaseTrap` has already been overwritten by `trapFocus()`.
+
+**The pattern:** Initialize mutable closure references as no-ops, then overwrite after the async work is wired up. More readable than `let releaseTrap: (() => void) | null = null` with null checks everywhere.
+
+---
+
+### 3.15 emptyNode factory: extending VirtualList without breaking existing callers
+
+All six lists in the app (Browse list+grid, Collection list+grid, Wishlist list+grid) already had `emptyMessage?: string`. The Browse tab needed an actionable empty state — "No cards match — try clearing filters" + a "Clear filters" button. Changing `emptyMessage` to accept DOM would break the existing string callers.
+
+**Solution: additive option `emptyNode?: () => HTMLElement`.**
+
+```typescript
+// VirtualList — if emptyNode is provided, call it; otherwise use emptyMessage string
+if (this.options.emptyNode) {
+  this.spacer.appendChild(this.options.emptyNode());
+} else {
+  const el = document.createElement("div");
+  el.className = "virtual-list-empty";
+  el.textContent = this.options.emptyMessage;
+  this.spacer.appendChild(el);
+}
+```
+
+The factory function is called on every empty render — allowing it to build fresh DOM each time with up-to-date closure state (e.g., `filterRefs` module variable). Existing callers pass only `emptyMessage` and are unaffected.
+
+---
+
+### 3.16 Grouped view memoization: cheap signature avoids full DOM rebuild
+
+`renderGroupedView()` did a full `container.innerHTML = ""` + rebuild on every `applyFilters()` call — even when nothing changed (e.g., user clicks a filter dropdown that doesn't match any entries). For 500+ entries with many groups, this re-creates hundreds of DOM nodes for no reason.
+
+**Fix: compute a signature string before touching the DOM.**
+
+```typescript
+let _lastSig = "";
+
+export function renderGroupedView(...): void {
+  const sig = entries.map((e) => `${e.id}:${e.quantity}`).join(",")
+    + `|${selectedId}|`
+    + [...collapsed].sort().join(",");
+  if (sig === _lastSig) return;
+  _lastSig = sig;
+  container.innerHTML = "";
+  // ... rebuild
+}
+```
+
+The sig encodes: which entries exist (by id), their quantities, which entry is selected, and which groups are collapsed. If none of these change between calls, the DOM is untouched. Cost: O(n) string concatenation — for 500 entries, well under 1 ms.
+
+**Trade-off:** Module-level `_lastSig` means the memo is shared across all callers. In practice `renderGroupedView` is only called from one place (`collection-tab.ts`) so this is fine.
+
+---
+
+*Last updated: Phase 6 complete — v0.2.0.*
 *See [REFLECTION.md](REFLECTION.md) for personal lessons and growth notes.*

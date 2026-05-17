@@ -86,7 +86,28 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ FOUC prevention: app hidden until JS init completes, then revealed
 - ✅ Android APK: `get_userdata_dir()` uses `app_data_dir()` on Android, portrait locked
 
-**Phase 6+ — Future (📋 Maybe)**
+**Phase 5.5 — Refactor (✅ Done)**
+- ✅ Extracted `stats-collapsible.ts` — eliminated 100% copy-paste between Collection + Wishlist tabs
+- ✅ Extracted `theme.ts`, `back-button.ts`, `browse-stats.ts` — `main.ts` 558 → 353 lines
+- ✅ Extracted `wishlist-row.ts` — consistent with other row builders
+- ✅ Refactored `collection-db.ts` — generic `loadJsonFile<T>`/`saveJsonFile<T>`
+- ✅ Moved GitHub fetch helpers to `cache.ts` — complete card data access layer in one module
+
+**Phase 6 — UX Polish + Performance (✅ Done)**
+- ✅ Animations: CSS 150ms tab fade, 200ms preview spring, button `:active` scale(0.97)
+- ✅ Skeleton rows: animated shimmer while Collection/Wishlist loads from disk
+- ✅ Empty states: descriptive text in all three tabs; Browse no-results shows inline "Clear filters" button
+- ✅ Long-press context menu on collection rows (500ms touch / right-click) — Edit + Delete without opening preview
+- ✅ Lightbox swipe-to-dismiss + Android back button support
+- ✅ Filter active indicator: accent dot on "⊟ Filter" button when any filter is active
+- ✅ Retry button inline in Browse status bar on fetch error
+- ✅ Focus trap in all modals (confirm dialog, import dialog, location manager)
+- ✅ ARIA labels on all icon-only buttons; `role="dialog"` + `aria-modal` on dialogs
+- ✅ Keyboard navigation: Esc closes all modals, Enter/Space activates mode options
+- ✅ `img.decoding="async"` on all card images — decode non-blocking, no main-thread jank
+- ✅ Grouped view memo — skip full DOM re-render when entries+selected+collapsed unchanged
+
+**Phase 7+ — Future (📋 Maybe)**
 - 📋 Bulk edit: select multiple entries → change location or delete in bulk
 - 📋 Deck Builder: Vanguard deck validation + export
 
@@ -177,6 +198,12 @@ vg_collection_tauri/
 │   ├── export-import.ts    # Export/Import backup logic (Tauri invoke + import dialog)
 │   ├── about-dialog.ts     # About dialog (version, links, GitHub)
 │   ├── toast.ts            # Toast notification (shared across modules)
+│   ├── theme.ts            # Dark/light mode toggle (localStorage persistence)
+│   ├── back-button.ts      # Android back button handler (close previews, double-back exit)
+│   ├── browse-stats.ts     # Browse tab status/stats UI helpers
+│   ├── stats-collapsible.ts # Shared collapsible stats widget (Collection + Wishlist)
+│   ├── context-menu.ts     # Generic floating context menu (long-press / right-click)
+│   ├── focus-trap.ts       # Modal focus trap (Tab cycles within dialog)
 │   ├── swipe-dismiss.ts    # Swipe-to-dismiss utility for bottom sheet (mobile)
 │   └── styles.css          # Tailwind CSS v4 — design tokens, responsive layout, dark mode
 ├── src-tauri/              # Rust backend

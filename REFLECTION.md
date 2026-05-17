@@ -318,6 +318,26 @@ confirm all usages are intentional.
 
 ---
 
+### Design Note: `img.decoding="async"` should have been there from day one
+
+During Phase 6 performance audit, I found all card image elements were missing `decoding="async"`. The browser default (`decoding="auto"`) may choose synchronous decode — blocking the main thread while parsing a JPEG, causing jank precisely when the user opens a preview pane or scrolls the grid. `decoding="async"` explicitly tells the browser to decode off the main thread.
+
+The fix is one line per image creation site. The lesson: any `<img>` element that is not in the initial critical path (i.e., loaded after interaction) should have `decoding="async"` and `loading="lazy"` by default.
+
+---
+
+### Bug 11: Grouped view re-rendered full DOM on every filter keystroke ✅ Fixed
+
+**What happened:** In "Grouped" view, typing in the collection search box triggered `applyFilters()` → `updateView()` → `renderGroupedView()` → `container.innerHTML = ""` + full rebuild on every keystroke, even when the filter result didn't change the entries.
+
+**Root cause:** `renderGroupedView` always wiped and rebuilt the DOM unconditionally. For small collections this was invisible; for 300+ entries in many groups it caused measurable jank.
+
+**The fix:** Added a module-level signature string (`_lastSig`) encoding entry ids+quantities+selectedId+collapsed set. If the sig matches the previous call, the function returns immediately without touching the DOM. This is O(n) string concatenation rather than O(n) DOM mutation.
+
+**Lesson:** DOM mutations are expensive. The cheapest DOM operation is the one you don't do. Even simple "did the data change?" checks are worth adding before any full container wipe.
+
+---
+
 ## Process Insights
 
 ### The multi-question approach before implementing
