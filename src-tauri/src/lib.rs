@@ -1,10 +1,20 @@
 use tauri_plugin_dialog::DialogExt;
 
 #[tauri::command]
-fn get_userdata_dir() -> Result<String, String> {
-    let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
-    let exe_dir = exe_path.parent().ok_or("exe has no parent directory")?;
-    Ok(exe_dir.join("userdata").to_string_lossy().into_owned())
+fn get_userdata_dir(app: tauri::AppHandle) -> Result<String, String> {
+    #[cfg(target_os = "android")]
+    {
+        use tauri::Manager;
+        let dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+        return Ok(dir.to_string_lossy().into_owned());
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        drop(app);
+        let exe_path = std::env::current_exe().map_err(|e| e.to_string())?;
+        let exe_dir = exe_path.parent().ok_or("exe has no parent directory")?;
+        Ok(exe_dir.join("userdata").to_string_lossy().into_owned())
+    }
 }
 
 #[tauri::command]

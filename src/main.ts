@@ -73,6 +73,79 @@ function setStartupProgress(pct: number): void {
   }
 }
 
+// ── Theme toggle ──────────────────────────────────────────────────────────────
+
+function initThemeToggle(): void {
+  const btn = document.getElementById("themeToggleBtn") as HTMLButtonElement | null;
+  if (!btn) return;
+
+  const saved = localStorage.getItem("theme") as "dark" | "light" | null;
+  if (saved) document.documentElement.setAttribute("data-theme", saved);
+
+  const update = () => {
+    const isDark = document.documentElement.getAttribute("data-theme") === "dark" ||
+      (!document.documentElement.hasAttribute("data-theme") &&
+       window.matchMedia("(prefers-color-scheme: dark)").matches);
+    btn.textContent = isDark ? "☀︎" : "☾";
+    btn.title = isDark ? "Switch to light mode" : "Switch to dark mode";
+  };
+  update();
+
+  btn.addEventListener("click", () => {
+    const current = document.documentElement.getAttribute("data-theme");
+    const isDark  = current === "dark" || (!current && window.matchMedia("(prefers-color-scheme: dark)").matches);
+    const next    = isDark ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    localStorage.setItem("theme", next);
+    update();
+  });
+}
+
+// ── Android back button ───────────────────────────────────────────────────────
+
+function initBackButton(): void {
+  window.history.pushState({ tag: "app" }, "");
+
+  let exitPending = false;
+  let exitTimer: ReturnType<typeof setTimeout> | null = null;
+
+  window.addEventListener("popstate", () => {
+    // Priority 1: close any open preview pane
+    if (cardPreview?.isOpen) {
+      cardPreview.hide();
+      window.history.pushState({ tag: "app" }, "");
+      return;
+    }
+    const collPane = document.getElementById("collectionPreviewPane");
+    if (collPane?.classList.contains("is-open")) {
+      closeCollectionPreview();
+      window.history.pushState({ tag: "app" }, "");
+      return;
+    }
+    const wishPane = document.getElementById("wishlistPreviewPane");
+    if (wishPane?.classList.contains("is-open")) {
+      closeWishlistPreview();
+      window.history.pushState({ tag: "app" }, "");
+      return;
+    }
+
+    // Priority 2: double-back to exit
+    if (exitPending) {
+      if (exitTimer) clearTimeout(exitTimer);
+      exitPending = false;
+      return; // don't re-push → next back press exits the app naturally
+    }
+
+    exitPending = true;
+    showToast("Tap sekali lagi untuk keluar");
+    window.history.pushState({ tag: "app" }, "");
+    exitTimer = setTimeout(() => {
+      exitPending = false;
+      window.history.pushState({ tag: "app" }, "");
+    }, 2000);
+  });
+}
+
 // ── Browse tab availability guard ─────────────────────────────────────────────
 
 function setupBrowseGuard(): void {
@@ -345,6 +418,7 @@ async function handleLoad() {
   } finally {
     setControlsDisabled(false);
     updateBrowseTabState();
+    document.getElementById("fouc-guard")?.remove();
   }
 }
 
@@ -464,6 +538,8 @@ async function init() {
   });
 
   document.getElementById("aboutBtn")?.addEventListener("click", showAboutDialog);
+  initThemeToggle();
+  initBackButton();
 
   refreshBtn.addEventListener("click", handleForceRefresh);
   clearBtn.addEventListener("click", handleClearCache);

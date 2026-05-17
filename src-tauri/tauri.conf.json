@@ -15,9 +15,7 @@
       {
         "title": "Cardfight!! Vanguard Collection Manager v0.1.0",
         "width": 1280,
-        "height": 800,
-        "minWidth": 1024,
-        "minHeight": 600
+        "height": 800
       }
     ],
     "security": {

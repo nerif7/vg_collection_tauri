@@ -4,11 +4,11 @@
 
 A **Cardfight!! Vanguard** card database browser and personal collection tracker built with Tauri 2 (Rust + WebView). This is a rewrite of an older Electron app.
 
-**Core motivation:** The old Electron app could not be used on mobile — users couldn't check their collection at card shops. Android APK is a long-term possibility (timeline uncertain; Windows distribution comes first).
+**Core motivation:** The old Electron app could not be used on mobile — users couldn't check their collection at card shops. Android APK is now active (dev build running on device).
 
 - **Primary user:** Personal use first; potentially shared with friends later
 - **UI language:** English
-- **Target platforms:** Windows (.msi) primary; Android APK TBD
+- **Target platforms:** Windows (portable `.exe`) + Android APK
 
 ---
 
@@ -19,7 +19,8 @@ A **Cardfight!! Vanguard** card database browser and personal collection tracker
 | Layer | Technology |
 |---|---|
 | Desktop framework | Tauri 2.x |
-| Frontend | Vanilla TypeScript + Vite (no component framework, ever) |
+| Frontend | Vanilla TypeScript + Vite (no JS component framework) |
+| Styling | Tailwind CSS v4 (utility-first, mobile-first) |
 | Local storage | JSON files in `{exe-dir}/userdata/` (portable) |
 | Card data source | GitHub — `nerif7/vanguard-library-db` (`cards.json`, ~10MB, 24k+ cards) |
 | Build tool | Vite |
@@ -60,7 +61,7 @@ src-tauri/src/
 
 ### Key Architectural Decisions
 
-- **Vanilla TS over React/Vue** — keeps bundle tiny, no framework overhead; this is a firm constraint
+- **Vanilla TS over React/Vue** — keeps bundle tiny, no JS component framework; Tailwind CSS v4 is used for styling (CSS utility library, not a component framework)
 - **JSON files in `{exe-dir}/userdata/`** — portable storage; copy folder = copy data, delete folder = clean uninstall; custom Rust commands (`get_userdata_dir`, `read_text_file`, `write_text_file`) instead of `tauri-plugin-fs`
 - **Pure filter module** — `filters.ts` has zero DOM dependencies; easy to test and reuse
 - **Generic `VirtualList<T>`** — parameterized by row height + render function; works with any data type
@@ -71,7 +72,7 @@ src-tauri/src/
 
 ### Non-negotiable rules
 
-1. **Vanilla TypeScript only** — never introduce React, Vue, Svelte, or any component framework
+1. **No JS component framework** — never introduce React, Vue, Svelte, or similar; Tailwind CSS is allowed (it's a CSS utility library, not a component framework)
 2. **One file, one responsibility** — never let a file become a god-file; extract a focused module when scope creeps
 3. **Minimal comments** — comment only the non-obvious WHY (hidden constraint, subtle invariant, workaround); never comment WHAT the code does
 4. **Strict TypeScript** — no `any`; all types must be explicit; `tsconfig.json` has `strict: true`
@@ -301,13 +302,68 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 
 - ✅ ZIP packaged as `VGCollection-v0.1.0-win64.zip` (2.8 MB compressed)
 - ✅ Published as GitHub Release — `v0.1.0` tag on `nerif7/vg_collection_tauri`
-- 📋 Android APK (Tauri mobile target; timeline TBD — after Windows v0.1.0 is stable)
+- ✅ Android dev build running on physical device via `npm run tauri android dev`
 
-### Phase 5+ — Future Features (maybe, not in scope now)
+### Phase 5 — Mobile-first UI (Tailwind CSS v4) 🔄 In Progress
+
+**Scope:** Full CSS rewrite (`styles.css` → Tailwind utilities) + responsive mobile layout. Desktop layout upgraded too.
+
+#### Locked decisions
+
+**Breakpoints:**
+- Mobile-first: design from 360px up
+- `sm` (640px): tablet adjustments
+- `md` (768px+): desktop layout kicks in (side preview pane, top tabs, inline filters)
+
+**Navigation:**
+- Mobile: **bottom navigation bar** — Collection | Wishlist | Browse (with icons)
+- Desktop: top tab bar (existing behavior)
+
+**Preview pane:**
+- Mobile: **bottom sheet** (slide up, ~80% screen height, swipe down to dismiss)
+- Desktop: side panel (existing behavior)
+
+**Filter bar (Browse tab):**
+- Mobile: search input full-width + funnel icon (🔽) to expand filters — hidden by default
+- Desktop: all filters inline (existing behavior)
+
+**Card list default view:**
+- Mobile: **grid 2 columns** (portrait card tiles with ×N badge)
+- Desktop: list view (existing behavior)
+
+**Header:**
+- Mobile: active tab name only (e.g. "Collection") + About (?) button right
+- Desktop: full app name (existing behavior)
+
+**Stats bar (Collection/Wishlist):**
+- Mobile: **collapsible** — tap to expand/collapse
+- Desktop: always visible (existing behavior)
+
+**Add to Collection form (Browse preview):**
+- Mobile: inside bottom sheet (qty controls + location input + Add button)
+- Desktop: existing inline form in side pane
+
+**Orientation:** Portrait only (locked via Android manifest)
+
+**Dark/Light mode:** Manual toggle in header (persist to `localStorage`); replaces OS-only behavior
+
+**Export/Import:** Tauri native file dialog — works on both Windows and Android
+
+#### Implementation order
+1. Install Tailwind CSS v4 + Vite plugin
+2. Migrate `styles.css` → Tailwind (desktop first, keep existing layout working)
+3. Add mobile bottom nav bar (responsive, replaces top tabs on mobile)
+4. Add bottom sheet component (used by preview pane on mobile)
+5. Make filter bar responsive (funnel button → filter sheet on mobile)
+6. Responsive stats bar (collapsible on mobile)
+7. Grid 2-col default on mobile
+8. Dark/light mode toggle
+9. Android manifest: lock portrait orientation
+
+### Phase 6+ — Future Features (maybe, not in scope now)
 
 - **Deck Builder**: Vanguard deck validation (max 4 copies per card name, 50 cards total), deck export as text list
 - **Bulk edit**: Select multiple collection entries → change location or delete in bulk
-- **Manual dark/light mode toggle**: Currently follows OS. Add in-app toggle (persist to localStorage)
 
 ---
 
@@ -363,7 +419,7 @@ Measured on Windows 11, 24,262 cards / 10.09 MB:
 | Item | Location | Priority | Notes |
 |---|---|---|---|
 | Grouped view not virtualized | `collection-grouped.ts` | Medium | Full DOM re-render; may lag at 500+ entries |
-| `btn-secondary` naming | `styles.css` | Low | Semantically misleading — it's the primary blue action button |
+| `btn-secondary` naming | `styles.css` | Low | Will be resolved in Tailwind CSS v4 rewrite (Phase 5) |
 
 ---
 
@@ -381,12 +437,21 @@ After every commit (including push), ask: **"Apakah kita perlu review CLAUDE.md 
 ## Development Commands
 
 ```bash
-npm run dev        # Vite dev server (port 1420) + Tauri dev window with HMR
-npm run build      # TypeScript type-check + Vite bundle + Tauri production build
-npm run tauri      # Direct access to Tauri CLI
+npm run dev                 # Vite dev server (port 1420) + Tauri dev window with HMR
+npm run build               # TypeScript type-check + Vite bundle + Tauri production build
+npm run tauri               # Direct access to Tauri CLI
+npm run tauri android dev   # Run on Android device (USB debugging enabled)
+npm run tauri android build # Build release APK
 ```
 
-Windows build output: `src-tauri/target/release/bundle/msi/`
+Windows build output: `src-tauri/target/release/`
+Android APK output: `src-tauri/gen/android/app/build/outputs/apk/`
+
+**Android env vars required:**
+```
+ANDROID_HOME = C:\Android\SDK
+NDK_HOME     = C:\Android\SDK\ndk\30.0.14904198
+```
 
 ---
 
@@ -398,6 +463,8 @@ Windows build output: `src-tauri/target/release/bundle/msi/`
 | `@tauri-apps/cli@2` | Build toolchain |
 | `tauri-plugin-opener` | Open URLs in system browser (Rust side) |
 | `tauri-plugin-dialog` | Native file save/open dialogs (Rust side, used by export/import) |
+| `tailwindcss@4` | Utility-first CSS framework (mobile-first responsive styling) |
+| `@tailwindcss/vite` | Tailwind v4 Vite plugin |
 | `vite` | Frontend bundler and dev server |
 
 Card image CDN (`en.cf-vanguard.com`) and GitHub API are whitelisted in `tauri.conf.json` CSP.

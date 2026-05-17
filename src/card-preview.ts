@@ -4,6 +4,7 @@ import {
   isInWishlist, addToWishlist, removeFromWishlist,
   getAllLocations,
 } from "./collection-db.ts";
+import { addSwipeToDismiss } from "./swipe-dismiss.ts";
 
 export interface BrowsePreviewCallbacks {
   onCollectionChanged: () => void;
@@ -24,6 +25,9 @@ export class CardPreview {
 
     panel.querySelector<HTMLButtonElement>("#previewClose")
       ?.addEventListener("click", () => this.hide());
+
+    const header = panel.querySelector<HTMLElement>(".preview-header");
+    if (header) addSwipeToDismiss(panel, header, () => this.hide());
   }
 
   setCallbacks(cb: BrowsePreviewCallbacks): void {

@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <style id="fouc-guard">body { visibility: hidden }</style>
   <title>Cardfight!! Vanguard Collection Manager v0.1.0</title>
 </head>
 <body>
@@ -11,8 +12,12 @@
   </div>
   <div class="app">
     <header>
-      <h1>Cardfight!! Vanguard Collection Manager</h1>
+      <!-- Mobile: active tab name -->
+      <span id="mobileHeaderTitle" class="header-mobile-title">Collection</span>
+      <!-- Desktop: full app name -->
+      <h1 class="header-app-title">Cardfight!! Vanguard Collection Manager</h1>
       <span id="updateSpinner" class="update-spinner" hidden>↻ Checking for updates…</span>
+      <button id="themeToggleBtn" type="button" class="theme-toggle-btn" title="Toggle dark/light mode">☀︎</button>
       <button id="aboutBtn" type="button" class="about-btn" title="About">?</button>
     </header>
 
@@ -58,7 +63,7 @@
         </div>
       </div>
 
-      <div id="collectionListMeta" class="list-meta" style="margin-bottom:6px">— entries</div>
+      <div id="collectionListMeta" class="list-meta collectionListMeta">— entries</div>
 
       <div class="browse-layout">
         <div id="collectionListContainer" class="card-list-container"></div>
@@ -129,17 +134,20 @@
         <div id="filterBar" class="filter-bar">
           <input type="search" id="searchInput"
                  placeholder="Search name, code, race, clan, nation…" autocomplete="off">
-          <select id="setFilter"><option value="all">All sets</option></select>
-          <select id="nationFilter"><option value="all">All nations</option></select>
-          <select id="unitTypeFilter"><option value="all">All types</option></select>
-          <select id="triggerFilter"><option value="all">All triggers</option></select>
-          <select id="browseSort" class="filter-select">
-            <option value="name">Name A–Z</option>
-            <option value="code">Code A–Z</option>
-            <option value="grade-asc">Grade 0→4</option>
-            <option value="grade-desc">Grade 4→0</option>
-            <option value="owned-desc">Owned (most)</option>
-          </select>
+          <button id="filterExpandBtn" type="button" class="filter-expand-btn">⊟ Filter</button>
+          <div id="filterDropdowns" class="filter-dropdowns">
+            <select id="setFilter"><option value="all">All sets</option></select>
+            <select id="nationFilter"><option value="all">All nations</option></select>
+            <select id="unitTypeFilter"><option value="all">All types</option></select>
+            <select id="triggerFilter"><option value="all">All triggers</option></select>
+            <select id="browseSort" class="filter-select">
+              <option value="name">Name A–Z</option>
+              <option value="code">Code A–Z</option>
+              <option value="grade-asc">Grade 0→4</option>
+              <option value="grade-desc">Grade 4→0</option>
+              <option value="owned-desc">Owned (most)</option>
+            </select>
+          </div>
           <button id="browseViewToggle" type="button" class="btn-secondary btn-sm">⊞ Grid</button>
           <button id="clearFiltersBtn" type="button" class="btn-clear-filters">✕ Clear</button>
         </div>
@@ -157,6 +165,22 @@
       </div>
     </div>
   </div>
+
+  <!-- ── Bottom navigation (mobile) ───────────────────────────────── -->
+  <nav id="bottomNav" class="bottom-nav">
+    <button class="bottom-nav-btn is-active" data-tab="collection" type="button">
+      <span class="bottom-nav-icon">📦</span>
+      <span class="bottom-nav-label">Collection</span>
+    </button>
+    <button class="bottom-nav-btn" data-tab="wishlist" type="button">
+      <span class="bottom-nav-icon">❤️</span>
+      <span class="bottom-nav-label">Wishlist</span>
+    </button>
+    <button class="bottom-nav-btn" data-tab="browse" type="button">
+      <span class="bottom-nav-icon">🔍</span>
+      <span class="bottom-nav-label">Browse</span>
+    </button>
+  </nav>
 
   <script type="module" src="/src/main.ts"></script>
 </body>

@@ -3,6 +3,7 @@ import { getAllWishlistEntries, removeFromWishlist } from "./collection-db.ts";
 import { VirtualList } from "./virtual-list.ts";
 import { VirtualGrid } from "./virtual-grid.ts";
 import { buildCardTile } from "./card-tile.ts";
+import { addSwipeToDismiss } from "./swipe-dismiss.ts";
 
 type WishlistSortKey = "name" | "code" | "nation";
 type WishlistViewMode = "list" | "grid";
@@ -32,10 +33,37 @@ let nationFilterEl: HTMLSelectElement;
 let typeFilterEl:  HTMLSelectElement;
 let viewToggleBtn: HTMLButtonElement;
 
+let statsBody: HTMLElement | null = null;
+
 // ── Init ───────────────────────────────────────────────────────────────────────
+
+function initStatsCollapsible(): void {
+  statsEl.className = "";
+
+  const toggle = document.createElement("button");
+  toggle.type = "button";
+  toggle.className = "stats-collapsible-toggle is-open";
+  toggle.innerHTML = `Stats <span class="arrow">›</span>`;
+
+  statsBody = document.createElement("div");
+  statsBody.className = "stats-collapsible-body collection-stats";
+
+  statsEl.appendChild(toggle);
+  statsEl.appendChild(statsBody);
+
+  toggle.addEventListener("click", () => {
+    const nowOpen = toggle.classList.toggle("is-open");
+    statsBody!.classList.toggle("is-hidden", !nowOpen);
+  });
+}
 
 export function initWishlistTab(cards: Card[]): void {
   cardMap = new Map(cards.map((c) => [c.enCardNo, c]));
+
+  initStatsCollapsible();
+
+  const previewHeader = previewPane.querySelector<HTMLElement>(".preview-header");
+  if (previewHeader) addSwipeToDismiss(previewPane, previewHeader, closePreview);
 
   searchEl      = document.getElementById("wishlistSearch")       as HTMLInputElement;
   sortEl        = document.getElementById("wishlistSort")         as HTMLSelectElement;
@@ -188,7 +216,7 @@ function applyFilters(): void {
 }
 
 function renderStats(): void {
-  statsEl.innerHTML = `<div class="stat"><span class="stat-label">Wishlist</span><span class="stat-value">${allEntries.length.toLocaleString()}</span></div>`;
+  statsBody!.innerHTML = `<div class="stat"><span class="stat-label">Wishlist</span><span class="stat-value">${allEntries.length.toLocaleString()}</span></div>`;
 }
 
 // ── Row builder ────────────────────────────────────────────────────────────────
