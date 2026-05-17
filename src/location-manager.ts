@@ -3,6 +3,7 @@ import { showConfirm } from "./confirm-dialog.ts";
 
 let _overlay: HTMLElement | null = null;
 let _onClose: (() => void) | undefined;
+let _escCleanup: (() => void) | null = null;
 
 export function openLocationManager(onClose?: () => void): void {
   _onClose = onClose;
@@ -15,11 +16,18 @@ export function openLocationManager(onClose?: () => void): void {
     document.body.appendChild(_overlay);
   }
   _overlay.classList.add("is-open");
+
+  const onKeydown = (e: KeyboardEvent) => { if (e.key === "Escape") _close(); };
+  document.addEventListener("keydown", onKeydown);
+  _escCleanup = () => document.removeEventListener("keydown", onKeydown);
+
   _render();
 }
 
 function _close(): void {
   _overlay!.classList.remove("is-open");
+  _escCleanup?.();
+  _escCleanup = null;
   _onClose?.();
 }
 

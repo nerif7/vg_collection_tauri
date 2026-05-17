@@ -40,6 +40,7 @@ export class TabNav {
       filterExpandBtn.addEventListener("click", () => {
         const isOpen = filterDropdowns.classList.toggle("is-open");
         filterExpandBtn.textContent = isOpen ? "⊠ Filter" : "⊟ Filter";
+        filterExpandBtn.setAttribute("aria-expanded", String(isOpen));
       });
     }
   }

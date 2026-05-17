@@ -17,8 +17,8 @@
       <!-- Desktop: full app name -->
       <h1 class="header-app-title">Cardfight!! Vanguard Collection Manager</h1>
       <span id="updateSpinner" class="update-spinner" hidden>↻ Checking for updates…</span>
-      <button id="themeToggleBtn" type="button" class="theme-toggle-btn" title="Toggle dark/light mode">☀︎</button>
-      <button id="aboutBtn" type="button" class="about-btn" title="About">?</button>
+      <button id="themeToggleBtn" type="button" class="theme-toggle-btn" title="Toggle dark/light mode" aria-label="Toggle dark/light mode">☀︎</button>
+      <button id="aboutBtn" type="button" class="about-btn" title="About" aria-label="About">?</button>
     </header>
 
     <nav class="tab-nav" id="tabNav">
@@ -37,7 +37,7 @@
                  placeholder="Search name, code, location…" autocomplete="off">
           <div class="collection-toolbar-actions">
             <button id="manageLocationsBtn" type="button" class="btn-secondary btn-sm">Locations</button>
-            <button id="collectionViewToggle" type="button" class="btn-secondary btn-sm">⊞ Grid</button>
+            <button id="collectionViewToggle" type="button" class="btn-secondary btn-sm" aria-label="Toggle list/grid view">⊞ Grid</button>
             <button id="exportBtn" type="button" class="btn-secondary btn-sm">Export</button>
             <button id="importBtn" type="button" class="btn-secondary btn-sm">Import</button>
           </div>
@@ -59,7 +59,7 @@
           <select id="collectionTypeFilter" class="filter-select">
             <option value="all">All types</option>
           </select>
-          <button id="collectionGroupToggle" type="button" class="btn-secondary btn-sm">≡ Grouped</button>
+          <button id="collectionGroupToggle" type="button" class="btn-secondary btn-sm" aria-label="Toggle grouped view">≡ Grouped</button>
         </div>
       </div>
 
@@ -70,7 +70,7 @@
         <aside id="collectionPreviewPane" class="preview-pane">
           <div class="preview-header">
             <span class="preview-header-title">Card Details</span>
-            <button id="collectionPreviewClose" class="btn-preview-close" type="button">✕</button>
+            <button id="collectionPreviewClose" class="btn-preview-close" type="button" aria-label="Close">✕</button>
           </div>
           <div id="collectionPreviewBody" class="preview-body"></div>
         </aside>
@@ -85,7 +85,7 @@
         <div class="toolbar-row">
           <input type="search" id="wishlistSearch"
                  placeholder="Search name, code…" autocomplete="off">
-          <button id="wishlistViewToggle" type="button" class="btn-secondary btn-sm">⊞ Grid</button>
+          <button id="wishlistViewToggle" type="button" class="btn-secondary btn-sm" aria-label="Toggle list/grid view">⊞ Grid</button>
         </div>
         <div class="toolbar-row toolbar-filters">
           <select id="wishlistSort" class="filter-select">
@@ -107,7 +107,7 @@
         <aside id="wishlistPreviewPane" class="preview-pane">
           <div class="preview-header">
             <span class="preview-header-title">Card Details</span>
-            <button id="wishlistPreviewClose" class="btn-preview-close" type="button">✕</button>
+            <button id="wishlistPreviewClose" class="btn-preview-close" type="button" aria-label="Close">✕</button>
           </div>
           <div id="wishlistPreviewBody" class="preview-body"></div>
         </aside>
@@ -134,7 +134,7 @@
         <div id="filterBar" class="filter-bar">
           <input type="search" id="searchInput"
                  placeholder="Search name, code, race, clan, nation…" autocomplete="off">
-          <button id="filterExpandBtn" type="button" class="filter-expand-btn">⊟ Filter</button>
+          <button id="filterExpandBtn" type="button" class="filter-expand-btn" aria-label="Show/hide filters" aria-expanded="false">⊟ Filter</button>
           <div id="filterDropdowns" class="filter-dropdowns">
             <select id="setFilter"><option value="all">All sets</option></select>
             <select id="nationFilter"><option value="all">All nations</option></select>
@@ -148,8 +148,8 @@
               <option value="owned-desc">Owned (most)</option>
             </select>
           </div>
-          <button id="browseViewToggle" type="button" class="btn-secondary btn-sm">⊞ Grid</button>
-          <button id="clearFiltersBtn" type="button" class="btn-clear-filters">✕ Clear</button>
+          <button id="browseViewToggle" type="button" class="btn-secondary btn-sm" aria-label="Toggle list/grid view">⊞ Grid</button>
+          <button id="clearFiltersBtn" type="button" class="btn-clear-filters" aria-label="Clear all filters">✕ Clear</button>
         </div>
 
         <div class="browse-layout">
@@ -157,7 +157,7 @@
           <aside id="previewPane" class="preview-pane">
             <div class="preview-header">
               <span class="preview-header-title">Card Details</span>
-              <button id="previewClose" class="btn-preview-close" type="button">✕</button>
+              <button id="previewClose" class="btn-preview-close" type="button" aria-label="Close">✕</button>
             </div>
             <div id="previewBody" class="preview-body"></div>
           </aside>

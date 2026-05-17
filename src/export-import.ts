@@ -8,6 +8,7 @@ import {
   clearAllCollectionEntries, clearAllWishlistEntries,
 } from "./collection-db.ts";
 import { showConfirm } from "./confirm-dialog.ts";
+import { trapFocus } from "./focus-trap.ts";
 
 interface BackupData {
   collection: CollectionEntry[];
@@ -145,14 +146,21 @@ function showImportModeDialog(
 
     const modes = document.createElement("div");
     modes.className = "import-dialog-modes";
+    modes.setAttribute("role", "group");
+    modes.setAttribute("aria-label", "Import mode");
 
-    const mergeOpt = document.createElement("div");
-    mergeOpt.className = "import-mode-option";
-    mergeOpt.innerHTML = "<strong>Merge</strong><span>Add to existing collection. Same card + location combines quantities.</span>";
+    const makeOpt = (label: string, desc: string): HTMLElement => {
+      const el = document.createElement("div");
+      el.className = "import-mode-option";
+      el.setAttribute("role", "button");
+      el.setAttribute("tabindex", "0");
+      el.setAttribute("aria-pressed", "false");
+      el.innerHTML = `<strong>${label}</strong><span>${desc}</span>`;
+      return el;
+    };
 
-    const replaceOpt = document.createElement("div");
-    replaceOpt.className = "import-mode-option";
-    replaceOpt.innerHTML = "<strong>Replace all</strong><span>Delete all existing collection and wishlist data first, then import.</span>";
+    const mergeOpt   = makeOpt("Merge", "Add to existing collection. Same card + location combines quantities.");
+    const replaceOpt = makeOpt("Replace all", "Delete all existing collection and wishlist data first, then import.");
 
     modes.append(mergeOpt, replaceOpt);
     box.appendChild(modes);
@@ -162,8 +170,15 @@ function showImportModeDialog(
 
     let selectedMode: "merge" | "replace" | null = null;
 
+    let releaseTrap = () => {};
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") done("cancel");
+    };
+
     const done = (val: "merge" | "replace" | "cancel") => {
       overlay.remove();
+      releaseTrap();
+      document.removeEventListener("keydown", onKeydown);
       resolve(val);
     };
 
@@ -171,19 +186,25 @@ function showImportModeDialog(
     confirmBtn.type = "button"; confirmBtn.className = "btn-secondary";
     confirmBtn.textContent = "Confirm";
     confirmBtn.disabled = true;
-    confirmBtn.addEventListener("click", () => {
-      if (selectedMode) done(selectedMode);
-    });
+    confirmBtn.addEventListener("click", () => { if (selectedMode) done(selectedMode); });
 
     const select = (mode: "merge" | "replace") => {
       selectedMode = mode;
       mergeOpt.classList.toggle("import-mode-option--selected", mode === "merge");
+      mergeOpt.setAttribute("aria-pressed", String(mode === "merge"));
       replaceOpt.classList.toggle("import-mode-option--selected", mode === "replace");
+      replaceOpt.setAttribute("aria-pressed", String(mode === "replace"));
       confirmBtn.disabled = false;
     };
 
-    mergeOpt.addEventListener("click", () => select("merge"));
-    replaceOpt.addEventListener("click", () => select("replace"));
+    const activate = (opt: HTMLElement, mode: "merge" | "replace") => {
+      opt.addEventListener("click", () => select(mode));
+      opt.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); select(mode); }
+      });
+    };
+    activate(mergeOpt, "merge");
+    activate(replaceOpt, "replace");
 
     const cancelBtn = document.createElement("button");
     cancelBtn.type = "button"; cancelBtn.className = "btn-neutral";
@@ -194,7 +215,11 @@ function showImportModeDialog(
     box.appendChild(btnRow);
     overlay.appendChild(box);
     document.body.appendChild(overlay);
-    requestAnimationFrame(() => overlay.classList.add("is-open"));
+    requestAnimationFrame(() => {
+      overlay.classList.add("is-open");
+      document.addEventListener("keydown", onKeydown);
+      releaseTrap = trapFocus(box);
+    });
 
     overlay.addEventListener("click", (e) => { if (e.target === overlay) done("cancel"); }, { once: true });
   });

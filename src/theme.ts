@@ -10,8 +10,10 @@ export function initThemeToggle(): void {
       document.documentElement.getAttribute("data-theme") === "dark" ||
       (!document.documentElement.hasAttribute("data-theme") &&
         window.matchMedia("(prefers-color-scheme: dark)").matches);
+    const label = isDark ? "Switch to light mode" : "Switch to dark mode";
     btn.textContent = isDark ? "☀︎" : "☾";
-    btn.title = isDark ? "Switch to light mode" : "Switch to dark mode";
+    btn.title = label;
+    btn.setAttribute("aria-label", label);
   };
   update();
 
