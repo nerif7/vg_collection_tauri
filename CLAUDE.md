@@ -335,9 +335,9 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 - ✅ Refactored `collection-db.ts` — generic `loadJsonFile<T>`/`saveJsonFile<T>` eliminates repeated error handling
 - ✅ Moved GitHub fetch helpers to `cache.ts` — complete card data access layer in one module
 
-### Phase 6 — UX Polish (📋 Next)
+### Phase 6 — UX Polish + Performance (📋 Next)
 
-**Goal:** Ship v0.2.0 (Windows exe + Android APK) after this phase.
+**Goal:** Ship v0.2.0 (Windows exe + Android APK) after this phase. Performance is a first-class concern alongside UX — every change should be evaluated for render cost, memory impact, and startup time. Always improve performance as much as possible.
 
 **v0.2.0 release plan:**
 - Changelog: Phase 5 mobile-first UI + Android APK + internal refactor (as "improved stability")
@@ -375,6 +375,19 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 #### 6.6 Filter Active Indicator
 - Show a dot/badge on the "⊟ Filter" button when any filter is active (nation, type, etc.)
 - Makes it obvious why the card list looks shorter than expected
+
+#### 6.7 Performance
+Performance is a **first-class concern** in Phase 6 — measure before and after every change.
+
+- **Startup time**: profile `handleLoad()` path; identify any blocking work that can be parallelized or deferred
+- **Collection/Wishlist load**: `loadCollectionTab()` and `loadWishlistTab()` read from disk synchronously in sequence — audit for parallelism
+- **Grouped view virtualization**: `collection-grouped.ts` does full DOM re-render on every filter change; consider incremental patch or virtualized groups for 500+ entries
+- **CSS paint cost**: audit animation and transition CSS added in 6.1 — use `will-change: transform` only where it actually reduces paint, not as a blanket rule
+- **Image loading**: card images in preview panes and lightbox — consider intersection observer lazy-load, decode async, and caching `<img>` elements instead of re-creating on every open
+- **Memory**: VirtualList/VirtualGrid recycle DOM nodes — verify no leaks when destroying and recreating after view mode toggle
+- **Bundle size**: check Vite output after each new module; no new npm dependencies without justification
+
+Baseline (measured, Phase 5 state): cache load 119 ms, JSON parse 17 ms, GitHub fetch ~9.4 s. Each Phase 6 change must not regress these numbers.
 
 ### Phase 7+ — Future Features (maybe, not in scope now)
 

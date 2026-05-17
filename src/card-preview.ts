@@ -47,6 +47,14 @@ export class CardPreview {
     return this.panel.classList.contains("is-open");
   }
 
+  get isLightboxOpen(): boolean {
+    return this._lightbox?.classList.contains("is-open") ?? false;
+  }
+
+  hideLightbox(): void {
+    this._hideLightbox();
+  }
+
   private async _render(card: Card): Promise<void> {
     this.body.innerHTML = "";
 
@@ -252,6 +260,8 @@ export class CardPreview {
       document.addEventListener("keydown", (e) => {
         if (e.key === "Escape") this._hideLightbox();
       });
+
+      addSwipeToDismiss(this._lightbox, this._lightbox, () => this._hideLightbox());
     }
 
     this._lightboxImg!.src = src;

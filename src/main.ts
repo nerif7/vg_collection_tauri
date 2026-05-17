@@ -13,7 +13,7 @@ import {
 } from "./filters.ts";
 import {
   getFilterBarRefs, populateDropdowns, readFilterState,
-  resetFilters, attachFilterListeners,
+  resetFilters, attachFilterListeners, setFilterActiveIndicator,
   type FilterBarRefs,
 } from "./filter-bar.ts";
 import { CardPreview } from "./card-preview.ts";
@@ -110,6 +110,7 @@ async function checkForUpdates(meta: CacheMeta): Promise<void> {
 function refreshList() {
   if (!filterRefs) return;
   const filter = readFilterState(filterRefs);
+  setFilterActiveIndicator(hasActiveFilter(filter));
   const filtered = applyFilters(allCards, filter);
   visibleCards = sortCards(filtered, browseSort, collectionQtyMap);
 
@@ -246,7 +247,7 @@ async function handleLoad() {
 
   } catch (err) {
     setStartupProgress(100);
-    setStatus(`❌ Failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+    setStatus(`❌ Failed: ${err instanceof Error ? err.message : String(err)}`, "error", () => handleForceRefresh());
     console.error(err);
   } finally {
     setControlsDisabled(false);
@@ -283,7 +284,7 @@ async function handleForceRefresh() {
   setControlsDisabled(true);
   clearStats();
   try { await doFetchAndCache(); }
-  catch (err) { setStatus(`❌ Refresh failed: ${err instanceof Error ? err.message : String(err)}`, "error"); }
+  catch (err) { setStatus(`❌ Refresh failed: ${err instanceof Error ? err.message : String(err)}`, "error", () => handleForceRefresh()); }
   finally { setControlsDisabled(false); updateBrowseTabState(); }
 }
 
@@ -372,6 +373,10 @@ async function init() {
 
   initThemeToggle();
   initBackButton([
+    {
+      isOpen: () => cardPreview?.isLightboxOpen ?? false,
+      close: () => cardPreview?.hideLightbox(),
+    },
     {
       isOpen: () => cardPreview?.isOpen ?? false,
       close: () => cardPreview?.hide(),

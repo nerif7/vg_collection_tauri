@@ -1,8 +1,10 @@
 import type { Card, CollectionEntry } from "./types.ts";
 import {
   getAllCollectionEntries,
-  getAllWishlistEntries, getAllLocations, movePartial,
+  getAllWishlistEntries, getAllLocations, movePartial, removeCollectionEntry,
 } from "./collection-db.ts";
+import { showConfirm } from "./confirm-dialog.ts";
+import { showContextMenu } from "./context-menu.ts";
 import { VirtualList } from "./virtual-list.ts";
 import { VirtualGrid } from "./virtual-grid.ts";
 import { buildCollectionRow } from "./collection-row.ts";
@@ -122,6 +124,32 @@ function setViewMode(mode: CollectionViewMode): void {
         virtualList!.refresh();
         openPreview(entry);
       },
+      onRowLongPress: (entry, _i, x, y) => {
+        showContextMenu(x, y, [
+          {
+            label: "Edit",
+            action: () => {
+              selectedId = entry.id ?? null;
+              virtualList?.refresh();
+              openPreview(entry);
+            },
+          },
+          {
+            label: "Delete",
+            danger: true,
+            action: async () => {
+              const ok = await showConfirm("Remove this entry from collection?");
+              if (!ok) return;
+              await removeCollectionEntry(entry.id!);
+              allEntries = allEntries.filter((e) => e.id !== entry.id);
+              applyFilters();
+              renderStats();
+              onCollectionChanged?.();
+              if (selectedId === entry.id) closePreview();
+            },
+          },
+        ]);
+      },
       emptyMessage: "No cards in collection yet — add from Browse tab",
     });
   } else if (mode === "grid") {
@@ -147,14 +175,23 @@ function setViewMode(mode: CollectionViewMode): void {
 // ── Load / refresh ─────────────────────────────────────────────────────────────
 
 export async function loadCollectionTab(): Promise<void> {
+  if (viewMode === "list") virtualList?.setSkeleton(8);
+
+  const t0 = performance.now();
   const [entries, wishlist] = await Promise.all([
     getAllCollectionEntries(),
     getAllWishlistEntries(),
   ]);
+  console.debug(`[perf] collection DB load: ${(performance.now() - t0).toFixed(1)} ms (${entries.length} entries)`);
+
   wishlistCount  = wishlist.length;
   allEntries     = entries;
+
+  const t1 = performance.now();
   populateCollectionFilters();
   applyFilters();
+  console.debug(`[perf] collection filter+render: ${(performance.now() - t1).toFixed(1)} ms`);
+
   renderStats();
 }
 

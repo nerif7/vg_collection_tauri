@@ -15,9 +15,17 @@ export function setStartupProgress(pct: number): void {
 export function setStatus(
   msg: string,
   kind: "info" | "loading" | "success" | "error" = "info",
+  onRetry?: () => void,
 ): void {
   statusEl.textContent = msg;
   statusEl.className = `status status-${kind}`;
+  if (onRetry) {
+    const btn = document.createElement("button");
+    btn.className = "status-retry-btn";
+    btn.textContent = "Retry";
+    btn.addEventListener("click", onRetry);
+    statusEl.appendChild(btn);
+  }
 }
 
 export function renderStats(opts: {

@@ -254,8 +254,12 @@
   .tab-btn.is-active { color: var(--accent-dark); border-bottom-color: var(--accent); }
   .tab-btn--unavailable { opacity: 0.4; cursor: default; }
 
-  .tab-panel { display: block; }
+  .tab-panel { display: block; animation: tab-fade-in 0.12s ease; }
   .tab-panel--hidden { display: none; }
+  @keyframes tab-fade-in {
+    from { opacity: 0; transform: translateY(3px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
 
   /* ── Bottom navigation (mobile only) ── */
   .bottom-nav {
@@ -405,9 +409,10 @@
     font-family: inherit;
     font-weight: 500;
     cursor: pointer;
-    transition: background 0.15s;
+    transition: background 0.15s, transform 0.08s;
     min-height: 44px;
   }
+  button:active:not(:disabled) { transform: scale(0.97); }
   @media (min-width: 768px) {
     button { padding: 8px 14px; min-height: unset; }
   }
@@ -574,8 +579,19 @@
     display: flex;
     align-items: center;
     gap: 4px;
+    position: relative;
   }
   .filter-expand-btn.has-active { color: var(--accent); border-color: var(--accent); }
+  .filter-expand-btn.has-active::after {
+    content: '';
+    position: absolute;
+    top: 5px;
+    right: 5px;
+    width: 6px;
+    height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
 
   /* Filter dropdowns: hidden on mobile until expanded */
   .filter-dropdowns {
@@ -728,6 +744,35 @@
     font-size: 0.9rem;
   }
 
+  /* ── Skeleton loader ── */
+  .skeleton-row {
+    display: grid;
+    grid-template-columns: 110px 1fr 44px;
+    gap: 10px;
+    padding: 0 12px;
+    align-items: center;
+    border-bottom: 1px solid var(--border);
+    box-sizing: border-box;
+  }
+  .skeleton-block {
+    height: 12px;
+    border-radius: 4px;
+    background: linear-gradient(
+      90deg,
+      var(--bg-muted) 25%,
+      color-mix(in srgb, var(--bg-muted) 60%, var(--bg-card)) 50%,
+      var(--bg-muted) 75%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.4s ease-in-out infinite;
+  }
+  .skeleton-block--wide { height: 14px; }
+  .skeleton-block--pill { height: 20px; border-radius: 999px; }
+  @keyframes skeleton-shimmer {
+    0%   { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
   /* ── Card tile (grid view) ── */
   .card-tile {
     display: flex;
@@ -788,7 +833,7 @@
     border-radius: 8px;
     display: flex;
     flex-direction: column;
-    transition: width 0.2s ease, opacity 0.18s ease;
+    transition: width 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), opacity 0.18s ease;
   }
   .preview-pane.is-open {
     width: 380px;
@@ -812,7 +857,7 @@
       border-top: 1px solid var(--border);
       box-shadow: 0 -4px 24px rgba(0,0,0,0.15);
       z-index: 100;
-      transition: height 0.3s ease;
+      transition: height 0.28s cubic-bezier(0.25, 0.46, 0.45, 0.94);
       overscroll-behavior: none;
     }
     .preview-pane.is-open {
@@ -1133,6 +1178,64 @@
   @media (hover: hover) {
     .card-list-container::-webkit-scrollbar-thumb:hover { background: rgba(127,127,127,0.45); }
   }
+
+  /* ── Status retry button ── */
+  .status-retry-btn {
+    margin-left: 10px;
+    background: transparent;
+    color: inherit;
+    border: 1px solid currentColor;
+    padding: 2px 10px;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    min-height: unset;
+    vertical-align: middle;
+    opacity: 0.85;
+  }
+  @media (hover: hover) {
+    .status-retry-btn:hover { opacity: 1; }
+  }
+
+  /* ── Context menu ── */
+  .context-menu {
+    position: fixed;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    z-index: 500;
+    min-width: 140px;
+    overflow: hidden;
+    opacity: 0;
+    transform: scale(0.95);
+    transform-origin: top left;
+    transition: opacity 0.1s ease, transform 0.1s ease;
+    pointer-events: none;
+  }
+  .context-menu--visible {
+    opacity: 1;
+    transform: scale(1);
+    pointer-events: all;
+  }
+  .context-menu-item {
+    display: block;
+    width: 100%;
+    background: transparent;
+    border: none;
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    text-align: left;
+    font-size: 0.88rem;
+    color: var(--text);
+    cursor: pointer;
+    min-height: 44px;
+    transition: background 0.08s;
+  }
+  .context-menu-item:last-child { border-bottom: none; }
+  @media (hover: hover) {
+    .context-menu-item:hover { background: var(--bg-hover); }
+  }
+  .context-menu-item--danger { color: var(--red); }
 
   /* ── Misc ── */
   .subtitle { font-size: 0.85rem; color: var(--text-muted); }

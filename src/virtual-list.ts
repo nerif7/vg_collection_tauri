@@ -21,6 +21,8 @@ export interface VirtualListOptions<T> {
   renderRow: (item: T, index: number) => HTMLElement;
   /** Optional: callback saat row di-click. */
   onRowClick?: (item: T, index: number) => void;
+  /** Optional: callback saat row di-long-press (500ms) atau right-click. */
+  onRowLongPress?: (item: T, index: number, x: number, y: number) => void;
   /** Optional: pesan saat list kosong. */
   emptyMessage?: string;
 }
@@ -29,7 +31,7 @@ export class VirtualList<T> {
   private container: HTMLElement;
   private spacer: HTMLDivElement;
   private items: T[] = [];
-  private options: Required<VirtualListOptions<T>>;
+  private options: Required<Omit<VirtualListOptions<T>, "onRowLongPress">> & Pick<VirtualListOptions<T>, "onRowLongPress">;
   private scrollHandler: () => void;
   private rafId: number | null = null;
 
@@ -101,6 +103,24 @@ export class VirtualList<T> {
     this.renderVisible();
   }
 
+  /** Render animated skeleton rows (while data loads). Replaced by setItems(). */
+  setSkeleton(count: number): void {
+    this.items = [];
+    this.spacer.style.height = `${count * this.options.rowHeight}px`;
+    this.spacer.innerHTML = "";
+    for (let i = 0; i < count; i++) {
+      const row = document.createElement("div");
+      row.className = "skeleton-row";
+      row.style.cssText = `position:absolute;top:${i * this.options.rowHeight}px;left:0;right:0;height:${this.options.rowHeight}px`;
+      row.innerHTML = `
+        <div class="skeleton-block"></div>
+        <div class="skeleton-block skeleton-block--wide"></div>
+        <div class="skeleton-block skeleton-block--pill"></div>
+      `;
+      this.spacer.appendChild(row);
+    }
+  }
+
   /** Cleanup — call saat component di-destroy. */
   destroy(): void {
     this.container.removeEventListener("scroll", this.scrollHandler);
@@ -140,14 +160,53 @@ export class VirtualList<T> {
       row.style.right    = "0";
       row.style.height   = `${rowHeight}px`;
 
-      // Wire click handler
       if (this.options.onRowClick) {
         row.style.cursor = "pointer";
-        row.addEventListener("click", () => this.options.onRowClick(item, i));
+        if (this.options.onRowLongPress) {
+          this._wireLongPress(row, item, i);
+        } else {
+          row.addEventListener("click", () => this.options.onRowClick(item, i));
+        }
       }
 
       this.spacer.appendChild(row);
     }
+  }
+
+  private _wireLongPress(row: HTMLElement, item: T, idx: number): void {
+    let lpTimer: ReturnType<typeof setTimeout> | null = null;
+    let lpFired = false;
+    let startX = 0, startY = 0;
+
+    row.addEventListener("touchstart", (e) => {
+      startX = e.touches[0].clientX;
+      startY = e.touches[0].clientY;
+      lpFired = false;
+      lpTimer = setTimeout(() => {
+        lpTimer = null;
+        lpFired = true;
+        navigator.vibrate?.(30);
+        this.options.onRowLongPress!(item, idx, startX, startY);
+      }, 500);
+    }, { passive: true });
+
+    const cancel = () => { if (lpTimer) { clearTimeout(lpTimer); lpTimer = null; } };
+    row.addEventListener("touchend",    cancel, { passive: true });
+    row.addEventListener("touchcancel", cancel, { passive: true });
+    row.addEventListener("touchmove", (e) => {
+      if (!lpTimer) return;
+      if (Math.abs(e.touches[0].clientX - startX) > 8 || Math.abs(e.touches[0].clientY - startY) > 8) cancel();
+    }, { passive: true });
+
+    row.addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      this.options.onRowLongPress!(item, idx, e.clientX, e.clientY);
+    });
+
+    row.addEventListener("click", () => {
+      if (lpFired) { lpFired = false; return; }
+      this.options.onRowClick(item, idx);
+    });
   }
 
   private escapeHtml(s: string): string {

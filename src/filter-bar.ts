@@ -89,6 +89,11 @@ export function resetFilters(refs: FilterBarRefs): void {
   refs.trigger.value  = INITIAL_FILTER_STATE.trigger;
 }
 
+/** Toggle has-active class on the mobile Filter button when any filter is active. */
+export function setFilterActiveIndicator(active: boolean): void {
+  document.getElementById("filterExpandBtn")?.classList.toggle("has-active", active);
+}
+
 /**
  * Wire all filter controls to call onChange callback.
  * Search input gets debounced (200ms).

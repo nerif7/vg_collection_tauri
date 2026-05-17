@@ -110,7 +110,12 @@ function setViewMode(mode: WishlistViewMode): void {
 // ── Load / refresh ─────────────────────────────────────────────────────────────
 
 export async function loadWishlistTab(): Promise<void> {
+  if (viewMode === "list") virtualList?.setSkeleton(6);
+
+  const t0 = performance.now();
   allEntries = await getAllWishlistEntries();
+  console.debug(`[perf] wishlist DB load: ${(performance.now() - t0).toFixed(1)} ms (${allEntries.length} entries)`);
+
   populateWishlistFilters();
   applyFilters();
   renderStats();
