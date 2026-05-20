@@ -2,8 +2,9 @@ import { invoke } from "@tauri-apps/api/core";
 import type { Card, FetchResult } from "./types.ts";
 import { showToast } from "./toast.ts";
 
-const DB_URL     = "https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/cards.json";
-const COMMIT_API = "https://api.github.com/repos/nerif7/vanguard-library-db/commits?path=cards.json&per_page=1";
+const DB_URL      = "https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/cards.json";
+const VERSION_URL = "https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/version.json";
+const COMMIT_API  = "https://api.github.com/repos/nerif7/vanguard-library-db/commits?path=cards.json&per_page=1";
 
 export interface CacheMeta {
   lastFetchAt:   number;
@@ -112,6 +113,20 @@ export async function clearMeta(): Promise<void> {
 }
 
 // ── GitHub fetch helpers ──────────────────────────────────────────────────────
+
+export interface VersionInfo {
+  lastUpdate: string;
+  cardCount:  number;
+  newSets:    string[];
+}
+
+export async function fetchVersionInfo(): Promise<VersionInfo | null> {
+  try {
+    const res = await fetch(VERSION_URL, { cache: "no-cache" });
+    if (!res.ok) return null;
+    return await res.json() as VersionInfo;
+  } catch { return null; }
+}
 
 export async function fetchFromGitHub(): Promise<FetchResult> {
   const fetchStart = performance.now();

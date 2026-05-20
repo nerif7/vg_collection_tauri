@@ -1,7 +1,7 @@
 import type { Card } from "./types.ts";
 import {
   saveCards, saveMeta, clearCards, clearMeta,
-  fetchFromGitHub, fetchLatestCommitSha, loadFromCache,
+  fetchFromGitHub, fetchLatestCommitSha, fetchVersionInfo, loadFromCache,
   type CacheMeta,
 } from "./cache.ts";
 import { getCollectionQtyMap, deduplicateCollection } from "./collection-db.ts";
@@ -114,10 +114,18 @@ function updateBrowseTabState(): void {
 async function checkForUpdates(meta: CacheMeta): Promise<void> {
   showUpdateSpinner(true);
   try {
-    const latestSha = await fetchLatestCommitSha();
-    if (!latestSha || latestSha === meta.lastCommitSha) return;
+    const version = await fetchVersionInfo();
+    let needsUpdate: boolean;
+    if (version) {
+      needsUpdate = version.cardCount !== meta.cardCount;
+    } else {
+      const sha = await fetchLatestCommitSha();
+      needsUpdate = !!sha && sha !== meta.lastCommitSha;
+    }
+    if (!needsUpdate) return;
     await doFetchAndCache();
-    showToast(`Cards updated — ${allCards.length.toLocaleString("id-ID")} cards loaded.`);
+    const setsMsg = version?.newSets.length ? ` — set baru: ${version.newSets.join(", ")}` : "";
+    showToast(`Cards diperbarui${setsMsg} (${allCards.length.toLocaleString("id-ID")} kartu).`);
   } finally {
     showUpdateSpinner(false);
   }
