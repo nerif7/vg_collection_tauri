@@ -32,6 +32,7 @@ const previewClose  = document.getElementById("collectionPreviewClose")!;
 
 // ── State ──────────────────────────────────────────────────────────────────────
 
+let _currentRegion: "EN" | "JP" = "EN";
 let allEntries: CollectionEntry[] = [];
 let visibleEntries: CollectionEntry[] = [];
 let cardMap = new Map<string, Card>();
@@ -56,7 +57,7 @@ let statsBody: HTMLElement | null = null;
 // ── Init ───────────────────────────────────────────────────────────────────────
 
 export function initCollectionTab(cards: Card[], onChange?: () => void): void {
-  cardMap = new Map(cards.map((c) => [c.enCardNo, c]));
+  cardMap = new Map(cards.map((c) => [c.cardNo, c]));
   onCollectionChanged = onChange ?? null;
 
   statsBody = createStatsCollapsible(statsEl);
@@ -174,7 +175,10 @@ function setViewMode(mode: CollectionViewMode): void {
 
 // ── Load / refresh ─────────────────────────────────────────────────────────────
 
-export async function loadCollectionTab(): Promise<void> {
+export async function loadCollectionTab(region?: "EN" | "JP", cards?: Card[]): Promise<void> {
+  if (region !== undefined) _currentRegion = region;
+  if (cards  !== undefined) cardMap = new Map(cards.map((c) => [c.cardNo, c]));
+
   if (viewMode === "list") virtualList?.setSkeleton(8);
 
   const t0 = performance.now();
@@ -184,8 +188,8 @@ export async function loadCollectionTab(): Promise<void> {
   ]);
   console.debug(`[perf] collection DB load: ${(performance.now() - t0).toFixed(1)} ms (${entries.length} entries)`);
 
-  wishlistCount  = wishlist.length;
-  allEntries     = entries;
+  wishlistCount  = wishlist.filter((w) => (w.region ?? "EN") === _currentRegion).length;
+  allEntries     = entries.filter((e) => (e.region ?? "EN") === _currentRegion);
 
   const t1 = performance.now();
   populateCollectionFilters();
@@ -242,8 +246,8 @@ function sortEntries(entries: CollectionEntry[], key: CollectionSortKey): Collec
       break;
     case "name":
       arr.sort((a, b) => {
-        const na = cardMap.get(a.cardCode)?.name ?? a.cardCode;
-        const nb = cardMap.get(b.cardCode)?.name ?? b.cardCode;
+        const na = cardMap.get(a.cardCode)?.displayName ?? a.cardCode;
+        const nb = cardMap.get(b.cardCode)?.displayName ?? b.cardCode;
         return na.localeCompare(nb);
       });
       break;
@@ -275,7 +279,7 @@ function applyFilters(): void {
       return (
         e.cardCode.toLowerCase().includes(q) ||
         e.location.toLowerCase().includes(q) ||
-        (card?.name.toLowerCase().includes(q) ?? false)
+        (card?.displayName.toLowerCase().includes(q) ?? false)
       );
     });
   }
@@ -356,11 +360,11 @@ async function renderPreview(entry: CollectionEntry): Promise<void> {
 
   previewBody.innerHTML = "";
 
-  if (card?.imageUrlEn) {
+  if (card?.imageUrl) {
     const wrap = document.createElement("div");
     wrap.className = "preview-image-wrap";
     const img = document.createElement("img");
-    img.src = card.imageUrlEn; img.alt = card.name;
+    img.src = card.imageUrl; img.alt = card.displayName;
     img.className = "preview-image"; img.loading = "lazy"; img.decoding = "async";
     wrap.appendChild(img);
     previewBody.appendChild(wrap);
@@ -370,7 +374,7 @@ async function renderPreview(entry: CollectionEntry): Promise<void> {
   info.className = "preview-info";
   const nameEl = document.createElement("div");
   nameEl.className = "preview-name";
-  nameEl.textContent = card?.name ?? entry.cardCode;
+  nameEl.textContent = card?.displayName ?? entry.cardCode;
   const codeEl = document.createElement("span");
   codeEl.className = "preview-code";
   codeEl.textContent = entry.cardCode;
