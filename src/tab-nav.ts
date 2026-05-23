@@ -1,10 +1,9 @@
-export type TabId = "collection" | "wishlist" | "browse" | "overview";
+export type TabId = "collection" | "wishlist" | "browse";
 
 const TAB_LABELS: Record<TabId, string> = {
   collection: "Collection",
   wishlist:   "Wishlist",
   browse:     "Browse",
-  overview:   "Overview",
 };
 
 export class TabNav {
@@ -24,7 +23,6 @@ export class TabNav {
       ["collection", document.getElementById("tabCollection")!],
       ["wishlist",   document.getElementById("tabWishlist")!],
       ["browse",     document.getElementById("tabBrowse")!],
-      ["overview",   document.getElementById("tabOverview")!],
     ]);
 
     const handleClick = (btn: HTMLButtonElement) => {
@@ -76,13 +74,4 @@ export class TabNav {
     this.onSwitch = fn;
   }
 
-  setTabVisible(id: TabId, visible: boolean): void {
-    const display = visible ? "" : "none";
-    this.buttons.forEach((btn) => {
-      if (btn.dataset["tab"] === id) btn.style.display = display;
-    });
-    this.bottomBtns.forEach((btn) => {
-      if (btn.dataset["tab"] === id) btn.style.display = display;
-    });
-  }
 }

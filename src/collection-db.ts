@@ -93,6 +93,11 @@ export function getAllCollectionEntries(): Promise<CollectionEntry[]> {
   return loadCollectionFile();
 }
 
+export async function getAllCollectionCardNos(): Promise<Set<string>> {
+  const entries = await loadCollectionFile();
+  return new Set(entries.map((e) => e.cardCode));
+}
+
 export async function getCollectionByCardCode(
   cardCode: string,
   region?: string,

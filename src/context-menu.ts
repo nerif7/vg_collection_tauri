@@ -5,6 +5,7 @@ export interface ContextMenuItem {
 }
 
 let activeMenu: HTMLElement | null = null;
+let docCloseListener: (() => void) | null = null;
 
 export function showContextMenu(x: number, y: number, items: ContextMenuItem[]): void {
   closeContextMenu();
@@ -39,12 +40,18 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[]):
   });
 
   setTimeout(() => {
-    document.addEventListener("click", closeContextMenu, { once: true });
-    document.addEventListener("touchstart", closeContextMenu, { once: true, passive: true });
+    docCloseListener = () => closeContextMenu();
+    document.addEventListener("click",      docCloseListener, { once: true });
+    document.addEventListener("touchstart", docCloseListener, { once: true, passive: true });
   }, 0);
 }
 
 export function closeContextMenu(): void {
+  if (docCloseListener) {
+    document.removeEventListener("click",      docCloseListener);
+    document.removeEventListener("touchstart", docCloseListener);
+    docCloseListener = null;
+  }
   activeMenu?.remove();
   activeMenu = null;
 }

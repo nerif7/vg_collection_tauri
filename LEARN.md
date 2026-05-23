@@ -1469,5 +1469,142 @@ The sig encodes: which entries exist (by id), their quantities, which entry is s
 
 ---
 
-*Last updated: Phase 6 complete — v0.2.0.*
+---
+
+### 3.17 Phase 8: Unified Card shape — normalization layer between raw JSON and the app
+
+EN cards (`cards.json`) have `enCardNo`, `name`, `imageUrlEn`. JP cards (`cards_jp.json`) have `jpCardNo`, `nameJp`, `imageUrlJp`. Two options for the app to consume both:
+
+**Option A — Two parallel Card types (`EnCard`, `JpCard`):** Every consumer (row builders, filter functions, preview pane) would need to branch on the type. A `VirtualList<EnCard | JpCard>` would need union-type guards everywhere.
+
+**Option B — Normalize at load time (chosen):**
+```typescript
+export function normalizeEn(raw: RawEnCard): Card {
+  return { ...raw, cardNo: raw.enCardNo, displayName: raw.name, imageUrl: raw.imageUrlEn, region: "EN" };
+}
+export function normalizeJp(raw: RawJpCard): Card {
+  return { ...raw, cardNo: raw.jpCardNo, displayName: raw.nameJp, imageUrl: raw.imageUrlJp, region: "JP" };
+}
+```
+
+`RawEnCard` and `RawJpCard` exist only in `cache.ts` and `types.ts`. The rest of the app only ever sees `Card`. Consumer code (`card-row.ts`, `filters.ts`, `card-preview.ts`) required zero conditional logic — just renamed field references from `enCardNo` → `cardNo`, `name` → `displayName`, `imageUrlEn` → `imageUrl`.
+
+**Trade-off:** The `Card` interface has `unitType: string | null` and `trigger: string | null` (not the `UnitType`/`TriggerType` unions) because JP values are Japanese strings. The type unions are still defined in `types.ts` as documentation for EN values, but aren't enforced on the `Card` interface.
+
+---
+
+### 3.18 Phase 8: region as first-class data in CollectionEntry and WishlistEntry
+
+The naive approach: store EN and JP data in separate files (`collection_en.json`, `collection_jp.json`). This doubles the file I/O code and makes Import/Export more complex.
+
+The chosen approach: add `region: "EN" | "JP"` to `CollectionEntry` and `WishlistEntry`, keep a single `collection.json` and `wishlist.json`. All query functions accept a `region` parameter and filter by it:
+
+```typescript
+// collection-db.ts
+export async function getCollectionEntries(region: "EN" | "JP"): Promise<CollectionEntry[]> {
+  const all = await loadCollectionFile();
+  return all.filter((e) => (e.region ?? "EN") === region);
+}
+```
+
+**Backward compatibility:** Old entries without a `region` field default to `"EN"` via the `?? "EN"` coalesce, applied in `loadCollectionFile()`. No migration script needed.
+
+**Trade-off:** A single `collection.json` means a read + filter on every query instead of reading a smaller per-region file. For a personal collection (< 500 entries), this is imperceptible.
+
+---
+
+### 3.19 Phase 8: nationless filter bug — Unicode-dash in JP scraped data
+
+The JP scraper stored nationless cards with `nations: ["‐"]` (U+2010 Unicode hyphen-minus look-alike) instead of `nations: []`. The EN filter compared against `"-"` (ASCII U+002D). The comparison never matched, so JP nationless cards appeared in no-nation queries but couldn't be explicitly filtered.
+
+The fix: a dash-normalization regex applied in both filter and dropdown extraction:
+```typescript
+const DASH_RE = /^[\-‐–—−]+$/; // ASCII -  U+2010  en-dash  em-dash  minus
+const realNations = card.nations.filter((n) => !DASH_RE.test(n));
+if (filter.nation === "-") {
+  if (realNations.length !== 0) return false;
+} else {
+  if (!realNations.includes(filter.nation)) return false;
+}
+```
+
+The same pattern runs in `filters.ts` (`applyFilters`, `extractUniqueOptions`), `collection-tab.ts` (`populateCollectionFilters`), and `wishlist-tab.ts` (`populateWishlistFilters`) — every place that builds the nation dropdown or filters by nation.
+
+**Root fix:** `fix_data.js` Fix 4 patched the one affected card in `cards_jp.json` (DAIGO V-SS08/005). The scraper was also updated to skip all Unicode-dash variants going forward. The regex in the app code remains as a defensive layer for any edge cases.
+
+---
+
+### 3.20 Phase 8: nation priority sort — EN and JP equivalents interleaved
+
+The nation dropdown in Browse was sorted alphabetically. This meant "Brandt Gate" appeared before "Dragon Empire" despite Dragon Empire being the most popular clan. In JP mode, Japanese nation names (ドラゴンエンパイア) appeared buried in a list sorted by Unicode codepoint, with no relationship to their EN counterparts.
+
+`sortNations()` in `filters.ts` uses a fixed priority list with EN and JP equivalents interleaved:
+```typescript
+const NATION_PRIORITY = [
+  "Dragon Empire",  "ドラゴンエンパイア",
+  "Dark States",    "ダークステイツ",
+  "Keter Sanctuary","ケテルサンクチュアリ",
+  // ...
+  "-",  // nationless last in the priority section
+];
+```
+
+Nations in the priority list appear first, in that order. Nations not in the list fall through to alphabetical sort. This keeps the most-used options at the top without hardcoding all possible set-specific nations.
+
+---
+
+---
+
+### 3.21 Phase 8 refactor: extracting `browse-tab.ts` from `main.ts`
+
+`main.ts` grew to 649 lines after JP integration — Browse tab logic (virtual list, filters, preview pane, availability guard) lived alongside app-level orchestration (region switching, cache loading, settings). The module boundary was blurry.
+
+The extraction followed the same pattern already established by `collection-tab.ts` and `wishlist-tab.ts`: a focused module exports a clean public API, and `main.ts` calls it via callbacks at init time.
+
+**Public API shape (8 exports):**
+- `initBrowseTab(callbacks)` — setup once at app start
+- `loadBrowseTab(cards, qtyMap)` — initial load or background update
+- `reloadBrowseTab(cards, qtyMap)` — region switch; destroys list, repopulates dropdowns
+- `refreshBrowseQtyMap(qtyMap)` — collection mutated; refresh badges only
+- `clearBrowseTab()`, `closeBrowsePreview()`, `updateBrowseAvailability()`, `getBrowseBackPanes()`
+
+Result: `main.ts` dropped from 649 → 451 lines. `browse-tab.ts` is 249 lines (slightly above the ~200 guideline, justified by Browse being the most complex tab).
+
+**Key decision — `updateBrowseAvailability` exposed vs internal:** Called both inside `loadBrowseTab`/`clearBrowseTab` (on data changes) AND from `main.ts`'s `finally` block (on fetch failure where `loadBrowseTab` never runs). Exposing it avoids a separate `onFetchError` callback.
+
+---
+
+### 3.22 Offline image cache — lazy download + base64 storage
+
+**Problem:** Card images load from CDN URLs. At a card shop without WiFi, users can't see card images in their collection.
+
+**Approach: lazy + base64 text storage via existing Rust commands**
+
+On each preview open, `getImageSrc(cardNo, cdnUrl)` in `image-cache.ts`:
+1. Checks in-memory Map (instant)
+2. Checks `userdata/images/{fileKey(cardNo)}` via `read_text_file` (existing Rust command, ~10–30ms IPC)
+3. If found: returns `data:image/jpeg;base64,{content}` — no network needed
+4. If not: returns CDN URL immediately, starts background download
+
+Background download (`_downloadBackground`):
+- `fetch(cdnUrl)` → `arrayBuffer()` → chunked base64 encode → `write_text_file`
+- Protected by `pendingDownloads: Set<string>` — prevents duplicate concurrent fetches for the same card if previews opened in rapid succession
+- Silent failure on network error — retry happens on next preview open
+
+**Why base64 text instead of binary file + asset protocol?**
+- `write_text_file` / `read_text_file` already exist — zero new Rust infrastructure
+- Tauri's asset protocol requires additional capability config that can break silently on Tauri updates
+- Trade-off: ~33% storage overhead. A 150KB JPEG → ~200KB on disk. For typical collections (50–200 unique cards) this is 10–40 MB — acceptable
+
+**Sanitizing cardNos as filenames:** Vanguard codes like `V-BT01/001EN` contain `/` which is a path separator on all platforms. `fileKey()` replaces `/` and other filesystem-reserved chars with `_`.
+
+**Chunked base64 encoding:** Character-by-character loop is slow on Android's JS engine. The implementation uses 8192-char chunks via `String.fromCharCode(...bytes.subarray(i, i + CHUNK))` — one function call per 8KB vs one per byte.
+
+**New Rust commands:** `list_dir_files(path)` → filenames in a directory; `delete_file(path)` → idempotent delete. Both follow the existing minimal-surface pattern (no `tauri-plugin-fs` dependency).
+
+**Clear image cache UI:** "Image Cache ▾" button in Browse toolbar opens a context menu with two options — clear all, or clear only images for cards not currently in the collection (orphaned). The latter also catches images cached from Browse-only previews.
+
+---
+
+*Last updated: browse-tab.ts extraction + offline image cache.*
 *See [REFLECTION.md](REFLECTION.md) for personal lessons and growth notes.*

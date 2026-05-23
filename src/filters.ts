@@ -37,7 +37,12 @@ export function applyFilters(cards: Card[], filter: FilterState): Card[] {
     }
 
     if (filter.nation !== "all") {
-      if (!card.nations.includes(filter.nation)) return false;
+      const realNations = card.nations.filter((n) => !/^[\-‐–—−]+$/.test(n));
+      if (filter.nation === "-") {
+        if (realNations.length !== 0) return false;
+      } else {
+        if (!realNations.includes(filter.nation)) return false;
+      }
     }
 
     if (query) {
@@ -94,12 +99,19 @@ export function extractUniqueOptions(cards: Card[]): {
   const unitTypeSet = new Set<string>();
   const triggerSet  = new Set<string>();
 
+  let hasNationless = false;
   for (const card of cards) {
     if (card.setCode)  setCodeSet.add(card.setCode);
     if (card.unitType) unitTypeSet.add(card.unitType);
     if (card.trigger)  triggerSet.add(card.trigger);
-    for (const n of card.nations) nationSet.add(n);
+    const realNations = card.nations.filter((n) => !/^[\-‐–—−]+$/.test(n));
+    if (realNations.length === 0) {
+      hasNationless = true;
+    } else {
+      for (const n of realNations) nationSet.add(n);
+    }
   }
+  if (hasNationless) nationSet.add("-");
 
   return {
     setCodes:  [...setCodeSet].sort(),

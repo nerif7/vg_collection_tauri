@@ -40,7 +40,7 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Location management — locations stored separately; default "my collection" seeded on first run
 - ✅ Manage Locations modal — add new locations from Collection toolbar
 - ✅ Centered custom confirm dialog (replaces native browser popup)
-- ✅ Sort options — Collection: location/name/qty/date; Browse: name/grade↑/grade↓/owned; Wishlist: name/nation
+- ✅ Sort options — Collection: location/name/code/qty/date; Browse: name/code/grade↑/grade↓/owned; Wishlist: name/code/nation
 - ✅ Filter dropdowns — Collection: location/nation/type; Wishlist: nation/type
 - ✅ Grid view toggle — all three tabs support list ↔ grid (virtualized, ~160px tiles, ×N badge)
 - ✅ Grouped view — Collection tab can toggle flat list ↔ collapsible location groups (in-group sort: grade → name)
@@ -107,9 +107,34 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ `img.decoding="async"` on all card images — decode non-blocking, no main-thread jank
 - ✅ Grouped view memo — skip full DOM re-render when entries+selected+collapsed unchanged
 
+**Phase 8 — JP Integration (✅ Done — v0.3.0)**
+- ✅ JP card database support — load `cards_jp.json` (27.2k JP cards) alongside EN
+- ✅ Unified `Card` shape — `cardNo`, `displayName`, `imageUrl`, `region` fields normalize EN + JP raw schemas
+- ✅ Region preference: **EN** | **JP** | **BOTH** — persisted to `userdata/settings.json`
+- ✅ Onboarding flow on first launch — region selection dialog blocks back button until choice is made
+- ✅ BOTH mode: two-button header — **"Both"** opens Change Region dialog, **"EN ▾"/"JP ▾"** switches active region via context menu dropdown
+- ✅ BOTH mode stats — Collection tab collapsible bar shows EN Unique/Copies/Wishlist + JP Unique/Copies/Wishlist side-by-side
+- ✅ `CollectionEntry` + `WishlistEntry` now carry `region: "EN" | "JP"` — backward compat: old entries default to `"EN"`
+- ✅ Stay on current tab when switching EN↔JP active region (no forced redirect to Collection)
+- ✅ Default sort changed to **Code A–Z** across all three tabs
+- ✅ Nation dropdown priority order: Dragon Empire → Dark States → Keter Sanctuary → Brandt Gate → Stoicheia → Lyrical Monasterio → EN + JP equivalents, rest alphabetical
+- ✅ Nation filter nationless fix — Unicode-dash `nations: ["‐"]` treated as `nations: []`; **"-"** option shown when nationless cards exist
+- ✅ JP scraper future-proof: `scrape_jp.js` now skips all Unicode-dash variants (not just ASCII `-`)
+- ✅ Data fix: `fix_data.js` Fix 4 added; DAIGO (V-SS08/005) patched in `cards_jp.json`
+- ✅ Refactor: `browse-tab.ts` extracted from `main.ts` — `main.ts` 649 → 451 lines
+
+**Phase 9 — Offline Image Cache (✅ Done)**
+- ✅ Card images cached locally in `userdata/images/` as base64 — works offline after first view
+- ✅ Lazy caching: image downloaded in background when preview first opened; served from disk on subsequent opens
+- ✅ Works in Collection, Wishlist, and Browse tab preview panes
+- ✅ "Image Cache ▾" button in Browse toolbar → context menu: **Clear all** or **Clear orphaned** (cards not in collection)
+- ✅ Rust: `list_dir_files` + `delete_file` commands added to `lib.rs`
+- ✅ New module: `image-cache.ts` — `getImageSrc()`, `clearAllImageCache()`, `clearOrphanedImageCache()`
+
 **Phase 7+ — Future (📋 Maybe)**
 - 📋 Bulk edit: select multiple entries → change location or delete in bulk
 - 📋 Deck Builder: Vanguard deck validation + export
+- 📋 Stats breakdown: per-set, per-nation, per-rarity collection analytics
 
 ## 📊 Performance
 
@@ -176,7 +201,7 @@ Prerequisites Android: Android Studio, SDK Platform 34, NDK 30.x, USB debugging 
 ```
 vg_collection_tauri/
 ├── src/                    # Frontend TypeScript
-│   ├── main.ts             # App orchestration, tab routing, global state
+│   ├── main.ts             # App orchestration, tab routing, global card state + region logic
 │   ├── cache.ts            # File-based card DB cache (userdata/cache/)
 │   ├── collection-db.ts    # JSON file CRUD for collection + wishlist + locations
 │   ├── types.ts            # All TypeScript interfaces and types
@@ -190,6 +215,7 @@ vg_collection_tauri/
 │   ├── collection-row.ts   # Collection row DOM builder
 │   ├── collection-grouped.ts # Grouped view renderer (collapsible location groups)
 │   ├── card-preview.ts     # Preview pane + lightbox (Browse tab)
+│   ├── browse-tab.ts       # Browse tab — virtual list/grid, filters, preview pane
 │   ├── collection-tab.ts   # Collection tab view + edit controls
 │   ├── collection-edit.ts  # Edit section DOM builder (qty/move/remove controls)
 │   ├── wishlist-tab.ts     # Wishlist tab view
@@ -205,6 +231,8 @@ vg_collection_tauri/
 │   ├── context-menu.ts     # Generic floating context menu (long-press / right-click)
 │   ├── focus-trap.ts       # Modal focus trap (Tab cycles within dialog)
 │   ├── swipe-dismiss.ts    # Swipe-to-dismiss utility for bottom sheet (mobile)
+│   ├── settings.ts         # Load/save region preference + active region to userdata/settings.json
+│   ├── onboarding.ts       # First-launch region selection dialog
 │   └── styles.css          # Tailwind CSS v4 — design tokens, responsive layout, dark mode
 ├── src-tauri/              # Rust backend
 │   ├── src/

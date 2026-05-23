@@ -66,6 +66,30 @@ async fn import_backup(app: tauri::AppHandle) -> Result<Option<String>, String> 
     Ok(Some(content))
 }
 
+#[tauri::command]
+fn list_dir_files(path: String) -> Result<Vec<String>, String> {
+    let p = std::path::Path::new(&path);
+    if !p.exists() {
+        return Ok(vec![]);
+    }
+    let entries = std::fs::read_dir(p).map_err(|e| e.to_string())?;
+    let files: Vec<String> = entries
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().map(|t| t.is_file()).unwrap_or(false))
+        .filter_map(|e| e.file_name().into_string().ok())
+        .collect();
+    Ok(files)
+}
+
+#[tauri::command]
+fn delete_file(path: String) -> Result<(), String> {
+    let p = std::path::Path::new(&path);
+    if p.exists() {
+        std::fs::remove_file(p).map_err(|e| e.to_string())?;
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -77,6 +101,8 @@ pub fn run() {
             write_text_file,
             export_backup,
             import_backup,
+            list_dir_files,
+            delete_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

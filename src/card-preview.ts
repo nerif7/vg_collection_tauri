@@ -4,6 +4,7 @@ import {
   isInWishlist, addToWishlist, removeFromWishlist,
   getAllLocations,
 } from "./collection-db.ts";
+import { getImageSrc } from "./image-cache.ts";
 import { addSwipeToDismiss } from "./swipe-dismiss.ts";
 
 export interface BrowsePreviewCallbacks {
@@ -63,13 +64,14 @@ export class CardPreview {
     imageWrap.className = "preview-image-wrap";
     if (card.imageUrl) {
       const img = document.createElement("img");
-      img.src = card.imageUrl;
+      const src = await getImageSrc(card.cardNo, card.imageUrl) ?? card.imageUrl;
+      img.src = src;
       img.alt = card.displayName;
       img.className = "preview-image";
       img.loading = "lazy";
       img.decoding = "async";
       img.title = "Click to enlarge";
-      img.addEventListener("click", () => this._showLightbox(card.imageUrl!, card.displayName));
+      img.addEventListener("click", () => this._showLightbox(src, card.displayName));
       imageWrap.appendChild(img);
     } else {
       const ph = document.createElement("div");

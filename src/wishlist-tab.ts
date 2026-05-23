@@ -1,5 +1,6 @@
 import type { Card, WishlistEntry } from "./types.ts";
 import { getAllWishlistEntries, removeFromWishlist } from "./collection-db.ts";
+import { getImageSrc } from "./image-cache.ts";
 import { VirtualList } from "./virtual-list.ts";
 import { VirtualGrid } from "./virtual-grid.ts";
 import { buildCardTile } from "./card-tile.ts";
@@ -131,13 +132,17 @@ function populateWishlistFilters(): void {
   const nations = new Set<string>();
   const types   = new Set<string>();
 
+  let hasNationless = false;
   for (const e of allEntries) {
     const card = cardMap.get(e.cardCode);
     if (card) {
-      for (const n of card.nations) nations.add(n);
+      const real = card.nations.filter((n) => !/^[\-‐–—−]+$/.test(n));
+      if (real.length === 0) hasNationless = true;
+      else for (const n of real) nations.add(n);
       if (card.unitType) types.add(card.unitType);
     }
   }
+  if (hasNationless) nations.add("-");
 
   const curNation = nationFilterEl?.value;
   const curType   = typeFilterEl?.value;
@@ -186,7 +191,7 @@ function applyFilters(): void {
   const q      = searchEl?.value.trim().toLowerCase() ?? "";
   const nation = nationFilterEl?.value ?? "all";
   const type   = typeFilterEl?.value   ?? "all";
-  const key    = (sortEl?.value ?? "name") as WishlistSortKey;
+  const key    = (sortEl?.value ?? "code") as WishlistSortKey;
 
   let filtered = allEntries;
 
@@ -199,7 +204,10 @@ function applyFilters(): void {
       );
     });
   }
-  if (nation !== "all") filtered = filtered.filter((e) => cardMap.get(e.cardCode)?.nations.includes(nation) ?? false);
+  if (nation !== "all") filtered = filtered.filter((e) => {
+    const real = (cardMap.get(e.cardCode)?.nations ?? []).filter((n) => !/^[\-‐–—−]+$/.test(n));
+    return nation === "-" ? real.length === 0 : real.includes(nation);
+  });
   if (type   !== "all") filtered = filtered.filter((e) => cardMap.get(e.cardCode)?.unitType === type);
 
   visibleEntries = sortWishlist(filtered, key);
@@ -230,7 +238,7 @@ function openPreview(entry: WishlistEntry): void {
   renderPreview(entry);
 }
 
-function renderPreview(entry: WishlistEntry): void {
+async function renderPreview(entry: WishlistEntry): Promise<void> {
   const card = cardMap.get(entry.cardCode);
   previewBody.innerHTML = "";
 
@@ -238,7 +246,8 @@ function renderPreview(entry: WishlistEntry): void {
     const wrap = document.createElement("div");
     wrap.className = "preview-image-wrap";
     const img = document.createElement("img");
-    img.src = card.imageUrl; img.alt = card.displayName;
+    img.src = await getImageSrc(card.cardNo, card.imageUrl) ?? card.imageUrl;
+    img.alt = card.displayName;
     img.className = "preview-image"; img.loading = "lazy"; img.decoding = "async";
     wrap.appendChild(img);
     previewBody.appendChild(wrap);

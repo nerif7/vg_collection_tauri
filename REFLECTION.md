@@ -326,6 +326,42 @@ The fix is one line per image creation site. The lesson: any `<img>` element tha
 
 ---
 
+### Bug 12: JP nationless cards invisible to nation filter ✅ Fixed
+
+**What happened:** In JP region Browse, filtering by **"-"** (nationless) returned no cards even though 1831+ JP cards have no nation. Nationless EN cards (Cray Elemental / Order) were also invisible to the filter.
+
+**Root cause:** The JP scraper stored nationless cards with `nations: ["‐"]` (U+2010 Unicode hyphen — visually identical to `-` but a different codepoint). The filter compared against `"-"` (ASCII U+002D). The comparison never matched, so:
+- Cards with `nations: ["‐"]` passed the `nation !== "all"` check (treated as having a nation)
+- The `"-"` sentinel was never generated for the dropdown because no card had `nations: []` after the scraper ran
+
+**The fix:** A Unicode-dash regex `/^[\-‐–—−]+$/` strips all dash variants before nation filtering. Any card where all nation entries are dash-only is treated as `nations: []`. A `"-"` sentinel is injected into the dropdown when any such card exists. Applied in `filters.ts`, `collection-tab.ts`, and `wishlist-tab.ts`.
+
+**Root fix:** `fix_data.js` Fix 4 patched the one card whose data had the wrong value (`nations: ["‐"]` → `nations: []`), and the scraper was updated to skip Unicode-dash variants going forward.
+
+**Lesson:** Unicode look-alike characters are a silent data quality problem. `"‐"` and `"-"` are visually identical in most editors. Never compare scraped string data with hardcoded literals without normalizing first — or use regex that covers the Unicode equivalents.
+
+---
+
+### Bug 13: Region button label wrong in BOTH mode ✅ Fixed
+
+**What happened:** In BOTH mode, the `#regionBtn` label showed **"JP ▾"** instead of **"Both"**. Clicking it opened a context menu with "View EN / View JP" — but the user expected "Change Region" (the full dialog). Meanwhile there was no separate button for switching the active region (EN↔JP) within BOTH mode.
+
+**Root cause:** `updateRegionButton()` reused the same single button for two semantically different actions — "change the overall region preference" and "switch which region is currently viewed." The logic was:
+```typescript
+// BUG: BOTH mode showed "JP ▾" because activeRegion was JP at the time
+regionBtn.textContent = `${activeRegion} ▾`;
+```
+
+**The fix:** Added a second `#regionSwitchBtn` element to the header. In BOTH mode:
+- `#regionBtn` always shows **"Both"** → opens Change Region dialog (the full onboarding-style flow)
+- `#regionSwitchBtn` shows **"EN ▾"** or **"JP ▾"** → opens a context menu for switching EN↔JP
+
+In single-region mode, `#regionSwitchBtn` is hidden.
+
+**Lesson:** A single button that does different things depending on mode is error-prone. Two buttons with clear, stable labels is more readable and less bug-prone.
+
+---
+
 ### Bug 11: Grouped view re-rendered full DOM on every filter keystroke ✅ Fixed
 
 **What happened:** In "Grouped" view, typing in the collection search box triggered `applyFilters()` → `updateView()` → `renderGroupedView()` → `container.innerHTML = ""` + full rebuild on every keystroke, even when the filter result didn't change the entries.
@@ -335,6 +371,36 @@ The fix is one line per image creation site. The lesson: any `<img>` element tha
 **The fix:** Added a module-level signature string (`_lastSig`) encoding entry ids+quantities+selectedId+collapsed set. If the sig matches the previous call, the function returns immediately without touching the DOM. This is O(n) string concatenation rather than O(n) DOM mutation.
 
 **Lesson:** DOM mutations are expensive. The cheapest DOM operation is the one you don't do. Even simple "did the data change?" checks are worth adding before any full container wipe.
+
+---
+
+### Race condition caught in review: duplicate image downloads (never shipped) ✅ Fixed
+
+**What was caught:** In the initial draft of `image-cache.ts`, `_downloadBackground` only checked `memCache.has(cardNo)` before starting a download. If the user opened the same card preview twice in rapid succession (both calls reach the "not cached" branch before either download completes), two parallel fetches for the same image would start — duplicating the HTTP request and the disk write.
+
+**Root cause:** The guard only checked the result state (memCache), not the in-flight state (pending download).
+
+**The fix:** Added `pendingDownloads: Set<string>` alongside `memCache`. `_downloadBackground` returns early if `pendingDownloads.has(cardNo)`. The set is cleared in a `.finally()` block so failures don't permanently block future retries.
+
+**Lesson:** Any "check then act" pattern where the check and the act are not atomic needs an in-flight guard. Async operations in particular: the result cache and the pending-work cache are two different things.
+
+---
+
+### Design decision: base64 text storage vs binary + asset protocol
+
+When implementing offline image cache, there were two realistic options:
+
+**Option A — binary file + `convertFileSrc` (Tauri asset protocol)**
+- Write raw image bytes to disk, serve via `asset://localhost/path` URL
+- Requires enabling `core:asset:scope` in Tauri capabilities with an explicit path allowlist
+
+**Option B — base64 text via existing `write_text_file` / `read_text_file`**
+- ~33% larger on disk (base64 overhead)
+- Zero new Rust code, zero new capability config
+
+Chose Option B. The storage overhead (10–40 MB for a typical collection) is acceptable, and avoiding new capability config removes a class of subtle breakage — Tauri capability identifiers can change between versions.
+
+**Lesson:** Reusing existing infrastructure (even at a storage cost) reduces the surface area that can break. Premature optimization of storage format is not worth the configuration complexity.
 
 ---
 

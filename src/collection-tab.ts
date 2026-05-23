@@ -3,6 +3,7 @@ import {
   getAllCollectionEntries,
   getAllWishlistEntries, getAllLocations, movePartial, removeCollectionEntry,
 } from "./collection-db.ts";
+import { getImageSrc } from "./image-cache.ts";
 import { showConfirm } from "./confirm-dialog.ts";
 import { showContextMenu } from "./context-menu.ts";
 import { VirtualList } from "./virtual-list.ts";
@@ -34,11 +35,15 @@ const previewClose  = document.getElementById("collectionPreviewClose")!;
 // ── State ──────────────────────────────────────────────────────────────────────
 
 let _currentRegion: "EN" | "JP" = "EN";
+let _regionPreference: "EN" | "JP" | "BOTH" = "EN";
 let allEntries: CollectionEntry[] = [];
+let allEntriesRaw: CollectionEntry[] = [];
 let visibleEntries: CollectionEntry[] = [];
 let cardMap = new Map<string, Card>();
 let selectedId: number | null = null;
 let wishlistCount = 0;
+let wishlistCountEN = 0;
+let wishlistCountJP = 0;
 let virtualList: VirtualList<CollectionEntry> | null = null;
 let virtualGrid: VirtualGrid<CollectionEntry> | null = null;
 let viewMode: CollectionViewMode = "list";
@@ -57,7 +62,8 @@ let statsBody: HTMLElement | null = null;
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 
-export function initCollectionTab(cards: Card[], onChange?: () => void): void {
+export function initCollectionTab(cards: Card[], regionPreference: "EN" | "JP" | "BOTH" = "EN", onChange?: () => void): void {
+  _regionPreference = regionPreference;
   cardMap = new Map(cards.map((c) => [c.cardNo, c]));
   onCollectionChanged = onChange ?? null;
 
@@ -176,9 +182,10 @@ function setViewMode(mode: CollectionViewMode): void {
 
 // ── Load / refresh ─────────────────────────────────────────────────────────────
 
-export async function loadCollectionTab(region?: "EN" | "JP", cards?: Card[]): Promise<void> {
-  if (region !== undefined) _currentRegion = region;
-  if (cards  !== undefined) cardMap = new Map(cards.map((c) => [c.cardNo, c]));
+export async function loadCollectionTab(region?: "EN" | "JP", cards?: Card[], regionPreference?: "EN" | "JP" | "BOTH"): Promise<void> {
+  if (region           !== undefined) _currentRegion    = region;
+  if (regionPreference !== undefined) _regionPreference = regionPreference;
+  if (cards            !== undefined) cardMap = new Map(cards.map((c) => [c.cardNo, c]));
 
   if (viewMode === "list") virtualList?.setSkeleton(8);
 
@@ -189,6 +196,9 @@ export async function loadCollectionTab(region?: "EN" | "JP", cards?: Card[]): P
   ]);
   console.debug(`[perf] collection DB load: ${(performance.now() - t0).toFixed(1)} ms (${entries.length} entries)`);
 
+  allEntriesRaw  = entries;
+  wishlistCountEN = wishlist.filter((w) => (w.region ?? "EN") === "EN").length;
+  wishlistCountJP = wishlist.filter((w) => (w.region ?? "EN") === "JP").length;
   wishlistCount  = wishlist.filter((w) => (w.region ?? "EN") === _currentRegion).length;
   allEntries     = entries.filter((e) => (e.region ?? "EN") === _currentRegion);
 
@@ -205,14 +215,18 @@ function populateCollectionFilters(): void {
   const types   = new Set<string>();
   const locs    = new Set<string>();
 
+  let hasNationless = false;
   for (const e of allEntries) {
     if (e.location) locs.add(e.location);
     const card = cardMap.get(e.cardCode);
     if (card) {
-      for (const n of card.nations) nations.add(n);
+      const real = card.nations.filter((n) => !/^[\-‐–—−]+$/.test(n));
+      if (real.length === 0) hasNationless = true;
+      else for (const n of real) nations.add(n);
       if (card.unitType) types.add(card.unitType);
     }
   }
+  if (hasNationless) nations.add("-");
 
   const curLoc    = locFilterEl?.value;
   const curNation = nationFilterEl?.value;
@@ -270,7 +284,7 @@ function applyFilters(): void {
   const loc    = locFilterEl?.value    ?? "all";
   const nation = nationFilterEl?.value ?? "all";
   const type   = typeFilterEl?.value   ?? "all";
-  const key    = (sortEl?.value ?? "loc-code") as CollectionSortKey;
+  const key    = (sortEl?.value ?? "code") as CollectionSortKey;
 
   let filtered = allEntries;
 
@@ -285,7 +299,10 @@ function applyFilters(): void {
     });
   }
   if (loc    !== "all") filtered = filtered.filter((e) => e.location === loc);
-  if (nation !== "all") filtered = filtered.filter((e) => cardMap.get(e.cardCode)?.nations.includes(nation) ?? false);
+  if (nation !== "all") filtered = filtered.filter((e) => {
+    const real = (cardMap.get(e.cardCode)?.nations ?? []).filter((n) => !/^[\-‐–—−]+$/.test(n));
+    return nation === "-" ? real.length === 0 : real.includes(nation);
+  });
   if (type   !== "all") filtered = filtered.filter((e) => cardMap.get(e.cardCode)?.unitType === type);
 
   visibleEntries = viewMode !== "grouped" ? sortEntries(filtered, key) : filtered;
@@ -318,16 +335,30 @@ function updateView(): void {
 }
 
 function renderStats(): void {
-  const uniqueCards = new Set(allEntries.map((e) => e.cardCode)).size;
-  const totalCopies = allEntries.reduce((s, e) => s + e.quantity, 0);
-  const locations   = new Set(allEntries.map((e) => e.location).filter((l) => l !== "")).size;
+  const locations = new Set(allEntriesRaw.map((e) => e.location).filter((l) => l !== "")).size;
 
-  statsBody!.innerHTML = [
-    stat("Unique cards", uniqueCards.toLocaleString()),
-    stat("Total copies", totalCopies.toLocaleString()),
-    stat("Wishlist", wishlistCount.toLocaleString()),
-    stat("Locations", locations.toLocaleString()),
-  ].join("");
+  if (_regionPreference === "BOTH") {
+    const enEntries = allEntriesRaw.filter((e) => (e.region ?? "EN") === "EN");
+    const jpEntries = allEntriesRaw.filter((e) => (e.region ?? "EN") === "JP");
+    statsBody!.innerHTML = [
+      stat("EN Unique",  new Set(enEntries.map((e) => e.cardCode)).size.toLocaleString()),
+      stat("EN Copies",  enEntries.reduce((s, e) => s + e.quantity, 0).toLocaleString()),
+      stat("EN Wishlist", wishlistCountEN.toLocaleString()),
+      stat("JP Unique",  new Set(jpEntries.map((e) => e.cardCode)).size.toLocaleString()),
+      stat("JP Copies",  jpEntries.reduce((s, e) => s + e.quantity, 0).toLocaleString()),
+      stat("JP Wishlist", wishlistCountJP.toLocaleString()),
+      stat("Locations",  locations.toLocaleString()),
+    ].join("");
+  } else {
+    const uniqueCards = new Set(allEntries.map((e) => e.cardCode)).size;
+    const totalCopies = allEntries.reduce((s, e) => s + e.quantity, 0);
+    statsBody!.innerHTML = [
+      stat("Unique cards", uniqueCards.toLocaleString()),
+      stat("Total copies", totalCopies.toLocaleString()),
+      stat("Wishlist",     wishlistCount.toLocaleString()),
+      stat("Locations",    locations.toLocaleString()),
+    ].join("");
+  }
 }
 
 function stat(label: string, value: string): string {
@@ -365,7 +396,8 @@ async function renderPreview(entry: CollectionEntry): Promise<void> {
     const wrap = document.createElement("div");
     wrap.className = "preview-image-wrap";
     const img = document.createElement("img");
-    img.src = card.imageUrl; img.alt = card.displayName;
+    img.src = await getImageSrc(card.cardNo, card.imageUrl) ?? card.imageUrl;
+    img.alt = card.displayName;
     img.className = "preview-image"; img.loading = "lazy"; img.decoding = "async";
     wrap.appendChild(img);
     previewBody.appendChild(wrap);
