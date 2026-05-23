@@ -48,7 +48,9 @@ async function saveJsonFile<T>(filename: string, data: T): Promise<void> {
 // ── Per-entity file helpers ───────────────────────────────────────────────────
 
 async function loadCollectionFile(): Promise<CollectionEntry[]> {
-  return (await loadJsonFile<CollectionEntry[]>("collection.json", "collection data")) ?? [];
+  const raw = (await loadJsonFile<CollectionEntry[]>("collection.json", "collection data")) ?? [];
+  // backward compat: old entries without region default to 'EN'
+  return raw.map((e) => ({ ...e, region: e.region ?? "EN" }));
 }
 
 async function saveCollectionFile(entries: CollectionEntry[]): Promise<void> {
@@ -56,7 +58,9 @@ async function saveCollectionFile(entries: CollectionEntry[]): Promise<void> {
 }
 
 async function loadWishlistFile(): Promise<WishlistEntry[]> {
-  return (await loadJsonFile<WishlistEntry[]>("wishlist.json", "wishlist data")) ?? [];
+  const raw = (await loadJsonFile<WishlistEntry[]>("wishlist.json", "wishlist data")) ?? [];
+  // backward compat: old entries without region default to 'EN'
+  return raw.map((e) => ({ ...e, region: e.region ?? "EN" }));
 }
 
 async function saveWishlistFile(entries: WishlistEntry[]): Promise<void> {
@@ -89,9 +93,14 @@ export function getAllCollectionEntries(): Promise<CollectionEntry[]> {
   return loadCollectionFile();
 }
 
-export async function getCollectionByCardCode(cardCode: string): Promise<CollectionEntry[]> {
+export async function getCollectionByCardCode(
+  cardCode: string,
+  region?: string,
+): Promise<CollectionEntry[]> {
   const entries = await loadCollectionFile();
-  return entries.filter((e) => e.cardCode === cardCode);
+  return entries.filter(
+    (e) => e.cardCode === cardCode && (region === undefined || e.region === region),
+  );
 }
 
 export async function updateCollectionEntry(entry: CollectionEntry): Promise<void> {
@@ -108,37 +117,48 @@ export async function removeCollectionEntry(id: number): Promise<void> {
   await saveCollectionFile(entries.filter((e) => e.id !== id));
 }
 
-/** Add qty to existing cardCode+location entry, or create a new one. */
-export async function mergeOrAdd(cardCode: string, location: string, qty: number): Promise<void> {
+/** Add qty to existing cardCode+location+region entry, or create a new one. */
+export async function mergeOrAdd(
+  cardCode: string,
+  location: string,
+  qty: number,
+  region: "EN" | "JP",
+): Promise<void> {
   const entries = await loadCollectionFile();
-  const existing = entries.find((e) => e.cardCode === cardCode && e.location === location);
+  const existing = entries.find(
+    (e) => e.cardCode === cardCode && e.location === location && e.region === region,
+  );
   if (existing) {
     existing.quantity += qty;
   } else {
-    entries.push({ id: nextId(entries), cardCode, location, quantity: qty });
+    entries.push({ id: nextId(entries), cardCode, location, quantity: qty, region });
   }
   await saveCollectionFile(entries);
 }
 
-/** Move qty copies from entry to toLocation. If qty >= entry.quantity, moves everything. */
-export async function movePartial(entry: CollectionEntry, toLocation: string, qty: number): Promise<void> {
+/** Move qty copies from entry to toLocation, preserving region. */
+export async function movePartial(
+  entry: CollectionEntry,
+  toLocation: string,
+  qty: number,
+): Promise<void> {
   const clampedQty = Math.min(qty, entry.quantity);
   if (clampedQty >= entry.quantity) {
-    await mergeOrAdd(entry.cardCode, toLocation, entry.quantity);
+    await mergeOrAdd(entry.cardCode, toLocation, entry.quantity, entry.region);
     await removeCollectionEntry(entry.id!);
   } else {
     await updateCollectionEntry({ ...entry, quantity: entry.quantity - clampedQty });
-    await mergeOrAdd(entry.cardCode, toLocation, clampedQty);
+    await mergeOrAdd(entry.cardCode, toLocation, clampedQty, entry.region);
   }
 }
 
-/** Merges entries that share the same cardCode+location. Returns number of groups merged. */
+/** Merges entries that share the same cardCode+location+region. Returns number of groups merged. */
 export async function deduplicateCollection(): Promise<number> {
   const entries = await loadCollectionFile();
   const groups = new Map<string, CollectionEntry[]>();
 
   for (const e of entries) {
-    const key = `${e.cardCode}\0${e.location}`;
+    const key = `${e.cardCode}\0${e.location}\0${e.region}`;
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key)!.push(e);
   }
@@ -162,11 +182,11 @@ export async function deduplicateCollection(): Promise<number> {
   return mergedCount;
 }
 
-/** Returns Map<cardCode, totalQty> across all entries — used for Browse row badges. */
-export async function getCollectionQtyMap(): Promise<Map<string, number>> {
+/** Returns Map<cardCode, totalQty> for a specific region — used for Browse row badges. */
+export async function getCollectionQtyMap(region: string): Promise<Map<string, number>> {
   const entries = await loadCollectionFile();
   const map = new Map<string, number>();
-  for (const e of entries) {
+  for (const e of entries.filter((e) => e.region === region)) {
     map.set(e.cardCode, (map.get(e.cardCode) ?? 0) + e.quantity);
   }
   return map;
@@ -186,27 +206,28 @@ export function getAllWishlistEntries(): Promise<WishlistEntry[]> {
   return loadWishlistFile();
 }
 
-export async function isInWishlist(cardCode: string): Promise<boolean> {
+export async function isInWishlist(cardCode: string, region: "EN" | "JP"): Promise<boolean> {
   const entries = await loadWishlistFile();
-  return entries.some((e) => e.cardCode === cardCode);
+  return entries.some((e) => e.cardCode === cardCode && e.region === region);
 }
 
-export async function addToWishlist(cardCode: string): Promise<void> {
+export async function addToWishlist(cardCode: string, region: "EN" | "JP"): Promise<void> {
   const entries = await loadWishlistFile();
-  if (!entries.some((e) => e.cardCode === cardCode)) {
-    entries.push({ cardCode });
+  if (!entries.some((e) => e.cardCode === cardCode && e.region === region)) {
+    entries.push({ cardCode, region });
     await saveWishlistFile(entries);
   }
 }
 
-export async function removeFromWishlist(cardCode: string): Promise<void> {
+export async function removeFromWishlist(cardCode: string, region: "EN" | "JP"): Promise<void> {
   const entries = await loadWishlistFile();
-  await saveWishlistFile(entries.filter((e) => e.cardCode !== cardCode));
+  await saveWishlistFile(
+    entries.filter((e) => !(e.cardCode === cardCode && e.region === region)),
+  );
 }
 
 // ── Locations API ─────────────────────────────────────────────────────────────
 
-/** Returns all location names from locations.json, sorted A–Z. */
 export async function getAllLocations(): Promise<string[]> {
   const locations = await loadLocationsFile();
   return [...locations].sort();
