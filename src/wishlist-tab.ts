@@ -20,6 +20,7 @@ const previewClose  = document.getElementById("wishlistPreviewClose")!;
 
 // ── State ──────────────────────────────────────────────────────────────────────
 
+let _currentRegion: "EN" | "JP" = "EN";
 let allEntries: WishlistEntry[] = [];
 let visibleEntries: WishlistEntry[] = [];
 let cardMap = new Map<string, Card>();
@@ -40,7 +41,7 @@ let statsBody: HTMLElement | null = null;
 // ── Init ───────────────────────────────────────────────────────────────────────
 
 export function initWishlistTab(cards: Card[]): void {
-  cardMap = new Map(cards.map((c) => [c.enCardNo, c]));
+  cardMap = new Map(cards.map((c) => [c.cardNo, c]));
 
   statsBody = createStatsCollapsible(statsEl);
 
@@ -109,11 +110,15 @@ function setViewMode(mode: WishlistViewMode): void {
 
 // ── Load / refresh ─────────────────────────────────────────────────────────────
 
-export async function loadWishlistTab(): Promise<void> {
+export async function loadWishlistTab(region?: "EN" | "JP", cards?: Card[]): Promise<void> {
+  if (region !== undefined) _currentRegion = region;
+  if (cards  !== undefined) cardMap = new Map(cards.map((c) => [c.cardNo, c]));
+
   if (viewMode === "list") virtualList?.setSkeleton(6);
 
   const t0 = performance.now();
-  allEntries = await getAllWishlistEntries();
+  const rawEntries = await getAllWishlistEntries();
+  allEntries = rawEntries.filter((e) => (e.region ?? "EN") === _currentRegion);
   console.debug(`[perf] wishlist DB load: ${(performance.now() - t0).toFixed(1)} ms (${allEntries.length} entries)`);
 
   populateWishlistFilters();
@@ -157,8 +162,8 @@ function sortWishlist(entries: WishlistEntry[], key: WishlistSortKey): WishlistE
   switch (key) {
     case "name":
       arr.sort((a, b) => {
-        const na = cardMap.get(a.cardCode)?.name ?? a.cardCode;
-        const nb = cardMap.get(b.cardCode)?.name ?? b.cardCode;
+        const na = cardMap.get(a.cardCode)?.displayName ?? a.cardCode;
+        const nb = cardMap.get(b.cardCode)?.displayName ?? b.cardCode;
         return na.localeCompare(nb);
       });
       break;
@@ -189,7 +194,7 @@ function applyFilters(): void {
       const card = cardMap.get(e.cardCode);
       return (
         e.cardCode.toLowerCase().includes(q) ||
-        (card?.name.toLowerCase().includes(q) ?? false)
+        (card?.displayName.toLowerCase().includes(q) ?? false)
       );
     });
   }
@@ -228,11 +233,11 @@ function renderPreview(entry: WishlistEntry): void {
   const card = cardMap.get(entry.cardCode);
   previewBody.innerHTML = "";
 
-  if (card?.imageUrlEn) {
+  if (card?.imageUrl) {
     const wrap = document.createElement("div");
     wrap.className = "preview-image-wrap";
     const img = document.createElement("img");
-    img.src = card.imageUrlEn; img.alt = card.name;
+    img.src = card.imageUrl; img.alt = card.displayName;
     img.className = "preview-image"; img.loading = "lazy"; img.decoding = "async";
     wrap.appendChild(img);
     previewBody.appendChild(wrap);
@@ -241,7 +246,7 @@ function renderPreview(entry: WishlistEntry): void {
   const info = document.createElement("div");
   info.className = "preview-info";
   const nameEl = document.createElement("div");
-  nameEl.className = "preview-name"; nameEl.textContent = card?.name ?? entry.cardCode;
+  nameEl.className = "preview-name"; nameEl.textContent = card?.displayName ?? entry.cardCode;
   const codeEl = document.createElement("span");
   codeEl.className = "preview-code"; codeEl.textContent = entry.cardCode;
   info.append(nameEl, codeEl);
@@ -251,7 +256,7 @@ function renderPreview(entry: WishlistEntry): void {
   removeBtn.className = "btn-danger btn-remove-collection";
   removeBtn.textContent = "Remove from Wishlist"; removeBtn.type = "button";
   removeBtn.addEventListener("click", async () => {
-    await removeFromWishlist(entry.cardCode);
+    await removeFromWishlist(entry.cardCode, entry.region ?? "EN");
     allEntries = allEntries.filter((e) => e.cardCode !== entry.cardCode);
     visibleEntries = visibleEntries.filter((e) => e.cardCode !== entry.cardCode);
     if (viewMode === "list") virtualList?.setItems(visibleEntries);
