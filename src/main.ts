@@ -1,7 +1,10 @@
-import type { Card } from "./types.ts";
+import type { Card, Settings } from "./types.ts";
 import {
   saveCards, saveMeta, clearCards, clearMeta,
-  fetchFromGitHub, fetchLatestCommitSha, fetchVersionInfo, loadFromCache,
+  saveCardsJp, saveMetaJp, clearCardsJp, clearMetaJp,
+  fetchFromGitHub, fetchFromGitHubJp,
+  fetchLatestCommitSha, fetchLatestCommitShaJp,
+  fetchVersionInfo, loadFromCache, loadFromCacheJp,
   type CacheMeta,
 } from "./cache.ts";
 import { getCollectionQtyMap, deduplicateCollection } from "./collection-db.ts";
@@ -34,6 +37,7 @@ function makeBrowseEmptyNode(): HTMLElement {
   wrap.append(text, btn);
   return wrap;
 }
+
 import { CardPreview } from "./card-preview.ts";
 import { VirtualGrid } from "./virtual-grid.ts";
 import { buildCardTile } from "./card-tile.ts";
@@ -44,22 +48,32 @@ import {
 } from "./collection-tab.ts";
 import {
   initWishlistTab, loadWishlistTab,
-  closeWishlistPreview, refreshWishlistTab,
+  closeWishlistPreview,
 } from "./wishlist-tab.ts";
 import { exportBackup, importBackup, type ImportResult } from "./export-import.ts";
 import { showConfirm } from "./confirm-dialog.ts";
 import { showAboutDialog } from "./about-dialog.ts";
 import { showToast } from "./toast.ts";
 import { initThemeToggle } from "./theme.ts";
-import { initBackButton } from "./back-button.ts";
+import { initBackButton, setOnboardingMode } from "./back-button.ts";
 import {
   setStartupProgress, setStatus, renderStats, clearStats,
   renderCacheInfo, showUpdateSpinner,
 } from "./browse-stats.ts";
+import { loadSettings, saveSettings } from "./settings.ts";
+import { showOnboarding } from "./onboarding.ts";
+import { initOverviewTab, loadOverviewTab } from "./overview-tab.ts";
 import "./styles.css";
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let allCards: Card[] = [];
+let allEnCards:       Card[] = [];
+let allJpCards:       Card[] = [];
+let allCards:         Card[] = [];    // pointer: allEnCards or allJpCards
+let activeRegion:     "EN" | "JP" = "EN";
+let regionPreference: "EN" | "JP" | "BOTH" = "EN";
+let enMeta: CacheMeta | null = null;
+let jpMeta: CacheMeta | null = null;
+
 let visibleCards: Card[] = [];
 let virtualList: VirtualList<Card> | null = null;
 let virtualGrid: VirtualGrid<Card> | null = null;
@@ -111,7 +125,7 @@ function updateBrowseTabState(): void {
 
 // ── Update check ──────────────────────────────────────────────────────────────
 
-async function checkForUpdates(meta: CacheMeta): Promise<void> {
+async function checkForUpdatesEn(meta: CacheMeta): Promise<void> {
   showUpdateSpinner(true);
   try {
     const version = await fetchVersionInfo();
@@ -123,9 +137,29 @@ async function checkForUpdates(meta: CacheMeta): Promise<void> {
       needsUpdate = !!sha && sha !== meta.lastCommitSha;
     }
     if (!needsUpdate) return;
-    await doFetchAndCache();
+    await doFetchAndCacheEn();
     const setsMsg = version?.newSets.length ? ` — set baru: ${version.newSets.join(", ")}` : "";
-    showToast(`Cards diperbarui${setsMsg} (${allCards.length.toLocaleString("id-ID")} kartu).`);
+    showToast(`EN cards diperbarui${setsMsg} (${allEnCards.length.toLocaleString("id-ID")} kartu).`);
+  } finally {
+    showUpdateSpinner(false);
+  }
+}
+
+async function checkForUpdatesJp(meta: CacheMeta): Promise<void> {
+  showUpdateSpinner(true);
+  try {
+    const version = await fetchVersionInfo();
+    let needsUpdate: boolean;
+    if (version?.cardCountJp !== undefined) {
+      needsUpdate = version.cardCountJp !== meta.cardCount;
+    } else {
+      const sha = await fetchLatestCommitShaJp();
+      needsUpdate = !!sha && sha !== meta.lastCommitSha;
+    }
+    if (!needsUpdate) return;
+    await doFetchAndCacheJp();
+    const setsMsg = version?.newSetsJp?.length ? ` — set baru: ${version.newSetsJp.join(", ")}` : "";
+    showToast(`JP cards diperbarui${setsMsg} (${allJpCards.length.toLocaleString("id-ID")} kartu).`);
   } finally {
     showUpdateSpinner(false);
   }
@@ -146,9 +180,9 @@ function refreshList() {
         rowHeight: 62,
         buffer: 8,
         renderRow: (card, _i) =>
-          buildCardRow(card, _i, card.enCardNo === selectedCardNo, collectionQtyMap.get(card.enCardNo)),
+          buildCardRow(card, _i, card.cardNo === selectedCardNo, collectionQtyMap.get(card.cardNo)),
         onRowClick: (card) => {
-          selectedCardNo = card.enCardNo;
+          selectedCardNo = card.cardNo;
           virtualList!.refresh();
           cardPreview!.show(card);
         },
@@ -163,11 +197,11 @@ function refreshList() {
         gap: 10,
         buffer: 3,
         renderCell: (card) =>
-          buildCardTile(card, card.enCardNo === selectedCardNo, {
-            badgeQty: collectionQtyMap.get(card.enCardNo),
+          buildCardTile(card, card.cardNo === selectedCardNo, {
+            badgeQty: collectionQtyMap.get(card.cardNo),
           }),
         onCellClick: (card) => {
-          selectedCardNo = card.enCardNo;
+          selectedCardNo = card.cardNo;
           virtualGrid!.refresh();
           cardPreview!.show(card);
         },
@@ -224,43 +258,186 @@ function setupFilters() {
 // ── Refresh collection overlay data ──────────────────────────────────────────
 
 async function refreshCollectionOverlay() {
-  collectionQtyMap = await getCollectionQtyMap();
+  collectionQtyMap = await getCollectionQtyMap(activeRegion);
   virtualList?.refresh();
   virtualGrid?.refresh();
+}
+
+// ── Fetch and cache ───────────────────────────────────────────────────────────
+
+async function doFetchAndCacheEn(): Promise<void> {
+  if (activeRegion === "EN") setStatus("Fetching EN cards from GitHub…", "loading");
+  const result = await fetchFromGitHub();
+  allEnCards = result.cards;
+  if (activeRegion === "EN") { allCards = allEnCards; visibleCards = allCards; }
+  const sha = await fetchLatestCommitSha();
+
+  if (activeRegion === "EN") setStatus("Saving EN cards to cache…", "loading");
+  await saveCards(result.cards);
+  enMeta = {
+    lastFetchAt: Date.now(), lastCommitSha: sha,
+    cardCount: result.cards.length, sizeBytes: result.totalBytes,
+  };
+  await saveMeta(enMeta);
+
+  if (activeRegion === "EN") {
+    setupFilters();
+    refreshList();
+    setStatus(`✅ Fetched ${result.cards.length.toLocaleString("id-ID")} EN cards (${(result.fetchTimeMs + result.parseTimeMs).toFixed(0)} ms) + cached`, "success");
+    renderStats({ count: result.cards.length, sizeBytes: result.totalBytes, fetchTimeMs: result.fetchTimeMs, parseTimeMs: result.parseTimeMs });
+    renderCacheInfo(enMeta);
+    updateListMeta(visibleCards.length, allCards.length, readFilterState(filterRefs!));
+  }
+}
+
+async function doFetchAndCacheJp(): Promise<void> {
+  if (activeRegion === "JP") setStatus("Fetching JP cards from GitHub…", "loading");
+  const result = await fetchFromGitHubJp();
+  allJpCards = result.cards;
+  if (activeRegion === "JP") { allCards = allJpCards; visibleCards = allCards; }
+  const sha = await fetchLatestCommitShaJp();
+
+  if (activeRegion === "JP") setStatus("Saving JP cards to cache…", "loading");
+  await saveCardsJp(result.cards);
+  jpMeta = {
+    lastFetchAt: Date.now(), lastCommitSha: sha,
+    cardCount: result.cards.length, sizeBytes: result.totalBytes,
+  };
+  await saveMetaJp(jpMeta);
+
+  if (activeRegion === "JP") {
+    setupFilters();
+    refreshList();
+    setStatus(`✅ Fetched ${result.cards.length.toLocaleString("id-ID")} JP cards (${(result.fetchTimeMs + result.parseTimeMs).toFixed(0)} ms) + cached`, "success");
+    renderStats({ count: result.cards.length, sizeBytes: result.totalBytes, fetchTimeMs: result.fetchTimeMs, parseTimeMs: result.parseTimeMs });
+    renderCacheInfo(jpMeta);
+    updateListMeta(visibleCards.length, allCards.length, readFilterState(filterRefs!));
+  }
+}
+
+// ── Switch region (BOTH mode) ─────────────────────────────────────────────────
+
+async function switchRegion(region: "EN" | "JP"): Promise<void> {
+  if (activeRegion === region) return;
+  activeRegion = region;
+  allCards     = region === "JP" ? allJpCards : allEnCards;
+
+  await saveSettings({ region_preference: regionPreference, last_active_region: region, migration_version: 1 });
+
+  virtualList?.destroy(); virtualList = null;
+  virtualGrid?.destroy(); virtualGrid = null;
+  listContainer.innerHTML = "";
+  selectedCardNo = null;
+
+  if (filterRefs) {
+    populateDropdowns(filterRefs, extractUniqueOptions(allCards));
+  }
+  refreshList();
+
+  await Promise.all([
+    loadCollectionTab(region, allCards),
+    loadWishlistTab(region, allCards),
+    refreshCollectionOverlay(),
+  ]);
+
+  tabNav?.switchTo("collection");
 }
 
 // ── Load handlers ─────────────────────────────────────────────────────────────
 
 async function handleLoad() {
+  const settings = await loadSettings();
+
+  if (!settings) {
+    setOnboardingMode(true);
+    document.getElementById("fouc-guard")?.remove();
+    const chosen = await showOnboarding();
+    setOnboardingMode(false);
+
+    const newSettings: Settings = {
+      region_preference:  chosen,
+      last_active_region: chosen === "BOTH" ? "EN" : (chosen as "EN" | "JP"),
+      migration_version:  1,
+    };
+    await saveSettings(newSettings);
+    regionPreference = chosen;
+    activeRegion     = newSettings.last_active_region;
+  } else {
+    regionPreference = settings.region_preference;
+    activeRegion     = settings.last_active_region;
+  }
+
+  tabNav?.setTabVisible("overview", regionPreference === "BOTH");
+
   setStartupProgress(5);
   setControlsDisabled(true);
   setStatus("Loading…", "loading");
   clearStats();
 
   try {
-    const startLoad = performance.now();
     setStartupProgress(15);
-    const cached = await loadFromCache();
-    const loadTime = performance.now() - startLoad;
 
-    if (cached) {
-      allCards = cached.cards;
-      visibleCards = allCards;
-      setStartupProgress(50);
+    // ── Load EN ───────────────────────────────────────────────────────────
+    if (regionPreference === "EN" || regionPreference === "BOTH") {
+      const t0     = performance.now();
+      const cached = await loadFromCache();
+      const loadMs = performance.now() - t0;
 
-      setupFilters();
-      refreshList();
-      setStartupProgress(70);
+      if (cached) {
+        allEnCards = cached.cards;
+        enMeta     = cached.meta;
+        if (activeRegion === "EN") {
+          allCards = allEnCards;
+          setStartupProgress(50);
+          setupFilters();
+          refreshList();
+          setStartupProgress(70);
+          setStatus(`⚡ Loaded ${allEnCards.length.toLocaleString("id-ID")} EN cards from cache in ${loadMs.toFixed(0)} ms`, "success");
+          renderStats({ count: allEnCards.length, sizeBytes: enMeta.sizeBytes, loadFromCacheMs: loadMs });
+          renderCacheInfo(enMeta);
+          updateListMeta(visibleCards.length, allCards.length, readFilterState(filterRefs!));
+        }
+        checkForUpdatesEn(enMeta).catch(() => {});
+      } else {
+        await doFetchAndCacheEn();
+        setStartupProgress(70);
+      }
+    }
 
-      setStatus(`⚡ Loaded ${allCards.length.toLocaleString("id-ID")} cards from cache in ${loadTime.toFixed(0)} ms`, "success");
-      renderStats({ count: allCards.length, sizeBytes: cached.meta.sizeBytes, loadFromCacheMs: loadTime });
-      renderCacheInfo(cached.meta);
-      updateListMeta(visibleCards.length, allCards.length, readFilterState(filterRefs!));
+    // ── Load JP ───────────────────────────────────────────────────────────
+    if (regionPreference === "JP" || regionPreference === "BOTH") {
+      const t0     = performance.now();
+      const cached = await loadFromCacheJp();
+      const loadMs = performance.now() - t0;
 
-      checkForUpdates(cached.meta).catch(() => {});
-    } else {
-      await doFetchAndCache();
-      setStartupProgress(70);
+      if (cached) {
+        allJpCards = cached.cards;
+        jpMeta     = cached.meta;
+        if (activeRegion === "JP") {
+          allCards = allJpCards;
+          setStartupProgress(50);
+          setupFilters();
+          refreshList();
+          setStartupProgress(70);
+          setStatus(`⚡ Loaded ${allJpCards.length.toLocaleString("id-ID")} JP cards from cache in ${loadMs.toFixed(0)} ms`, "success");
+          renderStats({ count: allJpCards.length, sizeBytes: jpMeta.sizeBytes, loadFromCacheMs: loadMs });
+          renderCacheInfo(jpMeta);
+          updateListMeta(visibleCards.length, allCards.length, readFilterState(filterRefs!));
+        }
+        checkForUpdatesJp(jpMeta).catch(() => {});
+      } else {
+        await doFetchAndCacheJp();
+        setStartupProgress(70);
+      }
+    }
+
+    // Safety: ensure allCards pointer is set (BOTH mode edge cases)
+    if (allCards.length === 0) {
+      allCards = activeRegion === "JP" ? allJpCards : allEnCards;
+      if (allCards.length > 0 && !filterRefs) {
+        setupFilters();
+        refreshList();
+      }
     }
 
     initCollectionTab(allCards, () => { refreshCollectionOverlay().catch(() => {}); });
@@ -268,7 +445,7 @@ async function handleLoad() {
     setStartupProgress(85);
     const mergedGroups = await deduplicateCollection();
     if (mergedGroups > 0) showToast(`Cleaned up ${mergedGroups} duplicate collection ${mergedGroups === 1 ? "entry" : "entries"}.`);
-    await Promise.all([loadCollectionTab(), loadWishlistTab(), refreshCollectionOverlay()]);
+    await Promise.all([loadCollectionTab(activeRegion), loadWishlistTab(activeRegion), refreshCollectionOverlay()]);
     setStartupProgress(100);
 
   } catch (err) {
@@ -282,44 +459,26 @@ async function handleLoad() {
   }
 }
 
-async function doFetchAndCache() {
-  setStatus("Fetching from GitHub…", "loading");
-  const result = await fetchFromGitHub();
-  allCards = result.cards;
-  visibleCards = allCards;
-  const sha = await fetchLatestCommitSha();
-
-  setStatus("Saving to cache…", "loading");
-  await saveCards(result.cards);
-  const meta: CacheMeta = {
-    lastFetchAt: Date.now(), lastCommitSha: sha,
-    cardCount: result.cards.length, sizeBytes: result.totalBytes,
-  };
-  await saveMeta(meta);
-
-  setupFilters();
-  refreshList();
-
-  setStatus(`✅ Fetched ${result.cards.length.toLocaleString("id-ID")} cards (${(result.fetchTimeMs + result.parseTimeMs).toFixed(0)} ms) + cached`, "success");
-  renderStats({ count: result.cards.length, sizeBytes: result.totalBytes, fetchTimeMs: result.fetchTimeMs, parseTimeMs: result.parseTimeMs });
-  renderCacheInfo(meta);
-  updateListMeta(visibleCards.length, allCards.length, readFilterState(filterRefs!));
-}
-
 async function handleForceRefresh() {
   setControlsDisabled(true);
   clearStats();
-  try { await doFetchAndCache(); }
-  catch (err) { setStatus(`❌ Refresh failed: ${err instanceof Error ? err.message : String(err)}`, "error", () => handleForceRefresh()); }
-  finally { setControlsDisabled(false); updateBrowseTabState(); }
+  try {
+    if (activeRegion === "EN") await doFetchAndCacheEn();
+    else                        await doFetchAndCacheJp();
+  } catch (err) {
+    setStatus(`❌ Refresh failed: ${err instanceof Error ? err.message : String(err)}`, "error", () => handleForceRefresh());
+  } finally {
+    setControlsDisabled(false);
+    updateBrowseTabState();
+  }
 }
 
 async function handleClearCache() {
   const ok = await showConfirm("Clear card cache? The local card database will be removed. You'll need an internet connection to reload.");
   if (!ok) return;
   try {
-    await Promise.all([clearCards(), clearMeta()]);
-    allCards = [];
+    await Promise.all([clearCards(), clearMeta(), clearCardsJp(), clearMetaJp()]);
+    allEnCards = []; allJpCards = []; allCards = []; enMeta = null; jpMeta = null;
     visibleCards = [];
     if (virtualList) virtualList.clear();
     filterBarEl.style.display = "none";
@@ -349,20 +508,27 @@ async function init() {
 
   tabNav = new TabNav();
 
-  tabNav.onTabSwitch((from, _to) => {
-    if (from === "browse") cardPreview?.hide();
+  tabNav.onTabSwitch((from, to) => {
+    if (from === "browse")     cardPreview?.hide();
     if (from === "collection") closeCollectionPreview();
-    if (from === "wishlist") closeWishlistPreview();
+    if (from === "wishlist")   closeWishlistPreview();
+    if (to === "overview") {
+      loadOverviewTab(allEnCards, allJpCards, enMeta, jpMeta, activeRegion, (region) => {
+        switchRegion(region).catch(() => {});
+      }).catch(() => {});
+    }
   });
+
+  initOverviewTab();
 
   cardPreview = new CardPreview(previewPaneEl);
   cardPreview.setCallbacks({
     onCollectionChanged: async () => {
       await refreshCollectionOverlay();
-      await loadCollectionTab();
+      await loadCollectionTab(activeRegion);
     },
     onWishlistChanged: async () => {
-      await refreshWishlistTab();
+      await loadWishlistTab(activeRegion);
     },
     onEditInCollection: (entry) => {
       tabNav!.switchTo("collection");
@@ -377,14 +543,17 @@ async function init() {
   });
 
   document.getElementById("importBtn")?.addEventListener("click", async () => {
-    const cardSet = new Set(allCards.map((c) => c.enCardNo));
+    const cardSet = new Set([
+      ...allEnCards.map((c) => c.cardNo),
+      ...allJpCards.map((c) => c.cardNo),
+    ]);
     const result = await importBackup(cardSet);
     if (result === "browser") {
       alert("Import requires the desktop app.");
     } else if (result === "invalid") {
       alert("Import failed: invalid or unrecognised backup file.");
     } else if (typeof result === "object") {
-      await Promise.all([loadCollectionTab(), loadWishlistTab(), refreshCollectionOverlay()]);
+      await Promise.all([loadCollectionTab(activeRegion), loadWishlistTab(activeRegion), refreshCollectionOverlay()]);
       const unknownMsg = result.unknownCount > 0
         ? ` (${result.unknownCount} unknown codes kept)`
         : "";

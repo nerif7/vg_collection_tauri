@@ -25,6 +25,7 @@
       <button class="tab-btn is-active" data-tab="collection" type="button">Collection</button>
       <button class="tab-btn" data-tab="wishlist" type="button">Wishlist</button>
       <button class="tab-btn" data-tab="browse" type="button">Browse</button>
+      <button class="tab-btn" data-tab="overview" type="button" style="display:none">Overview</button>
     </nav>
 
     <!-- ── Collection tab ──────────────────────────────────────────── -->
@@ -114,6 +115,12 @@
       </div>
     </div>
 
+    <!-- ── Overview tab (BOTH mode only) ────────────────────────────── -->
+    <div id="tabOverview" class="tab-panel tab-panel--hidden">
+      <div id="overviewStats" class="collection-stats"></div>
+      <div id="overviewSwitchRow" class="overview-switch-row"></div>
+    </div>
+
     <!-- ── Browse tab ──────────────────────────────────────────────── -->
     <div id="tabBrowse" class="tab-panel tab-panel--hidden">
       <div class="actions">
@@ -179,6 +186,10 @@
     <button class="bottom-nav-btn" data-tab="browse" type="button">
       <span class="bottom-nav-icon">🔍</span>
       <span class="bottom-nav-label">Browse</span>
+    </button>
+    <button class="bottom-nav-btn" data-tab="overview" type="button" style="display:none">
+      <span class="bottom-nav-icon">⊞</span>
+      <span class="bottom-nav-label">Overview</span>
     </button>
   </nav>
 
