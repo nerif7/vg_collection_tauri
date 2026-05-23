@@ -343,6 +343,29 @@ async function switchRegion(region: "EN" | "JP"): Promise<void> {
   tabNav?.switchTo("collection");
 }
 
+// ── Region button ─────────────────────────────────────────────────────────────
+
+function updateRegionButton(): void {
+  const btn = document.getElementById("regionBtn");
+  if (!btn) return;
+  btn.textContent = regionPreference === "BOTH"
+    ? `${activeRegion} ▾`
+    : regionPreference;
+}
+
+async function handleChangeRegion(): Promise<void> {
+  const chosen = await showOnboarding(regionPreference);
+  if (chosen === regionPreference) return;
+
+  const newSettings: Settings = {
+    region_preference:  chosen,
+    last_active_region: chosen === "BOTH" ? activeRegion : (chosen as "EN" | "JP"),
+    migration_version:  1,
+  };
+  await saveSettings(newSettings);
+  window.location.reload();
+}
+
 // ── Load handlers ─────────────────────────────────────────────────────────────
 
 async function handleLoad() {
@@ -368,6 +391,7 @@ async function handleLoad() {
   }
 
   tabNav?.setTabVisible("overview", regionPreference === "BOTH");
+  updateRegionButton();
 
   setStartupProgress(5);
   setControlsDisabled(true);
@@ -564,6 +588,7 @@ async function init() {
     }
   });
 
+  document.getElementById("regionBtn")?.addEventListener("click", handleChangeRegion);
   document.getElementById("aboutBtn")?.addEventListener("click", showAboutDialog);
 
   initThemeToggle();

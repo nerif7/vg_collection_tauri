@@ -1,7 +1,9 @@
 import type { Settings } from "./types.ts";
 import { trapFocus } from "./focus-trap.ts";
 
-export function showOnboarding(): Promise<Settings["region_preference"]> {
+export function showOnboarding(
+  current?: Settings["region_preference"],
+): Promise<Settings["region_preference"]> {
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
     overlay.className = "modal-overlay is-open";
@@ -15,7 +17,7 @@ export function showOnboarding(): Promise<Settings["region_preference"]> {
     const title = document.createElement("div");
     title.id        = "onb-title";
     title.className = "import-dialog-title";
-    title.textContent = "Welcome — Choose Region";
+    title.textContent = current ? "Change Region" : "Welcome — Choose Region";
     box.appendChild(title);
 
     const desc = document.createElement("p");
@@ -87,6 +89,9 @@ export function showOnboarding(): Promise<Settings["region_preference"]> {
       resolve(chosen);
     });
 
-    requestAnimationFrame(() => { releaseTrap = trapFocus(box); });
+    requestAnimationFrame(() => {
+      releaseTrap = trapFocus(box);
+      if (current) select(current);
+    });
   });
 }
