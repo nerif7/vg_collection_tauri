@@ -6,6 +6,7 @@ import { buildCardTile } from "./card-tile.ts";
 import { addSwipeToDismiss } from "./swipe-dismiss.ts";
 import { createStatsCollapsible } from "./stats-collapsible.ts";
 import { buildWishlistRow } from "./wishlist-row.ts";
+import { sortNations } from "./filters.ts";
 
 type WishlistSortKey = "name" | "code" | "nation";
 type WishlistViewMode = "list" | "grid";
@@ -143,15 +144,15 @@ function populateWishlistFilters(): void {
 
   const fill = (el: HTMLSelectElement, items: string[], label: string) => {
     el.innerHTML = `<option value="all">${label}</option>`;
-    for (const v of [...items].sort()) {
+    for (const v of items) {
       const opt = document.createElement("option");
       opt.value = v; opt.textContent = v;
       el.appendChild(opt);
     }
   };
 
-  fill(nationFilterEl, [...nations], "All nations");
-  fill(typeFilterEl,   [...types],   "All types");
+  fill(nationFilterEl, sortNations([...nations]), "All nations");
+  fill(typeFilterEl,   [...types].sort(),         "All types");
 
   if (curNation) nationFilterEl.value = curNation;
   if (curType)   typeFilterEl.value   = curType;

@@ -57,6 +57,28 @@ export function applyFilters(cards: Card[], filter: FilterState): Card[] {
   });
 }
 
+// Priority order for the nation dropdown (EN then JP equivalents).
+// Nations not in this list fall through to alphabetical sort below them.
+const NATION_PRIORITY: readonly string[] = [
+  "Dragon Empire",        "ドラゴンエンパイア",
+  "Dark States",          "ダークステイツ",
+  "Keter Sanctuary",      "ケテルサンクチュアリ",
+  "Brandt Gate",          "ブラントゲート",
+  "Stoicheia",            "ストイケイア",
+  "Lyrical Monasterio",   "リリカルモナステリオ",
+  "Cray Elemental",       "クレイエレメンタル",
+  "-",
+];
+
+export function sortNations(nations: string[]): string[] {
+  const set = new Set(nations);
+  const prioritized = NATION_PRIORITY.filter((n) => set.has(n));
+  const rest = nations
+    .filter((n) => !NATION_PRIORITY.includes(n))
+    .sort((a, b) => a.localeCompare(b));
+  return [...prioritized, ...rest];
+}
+
 /**
  * Extract unique dropdown values from cards.
  * unitTypes and triggers are dynamic — correct for both EN and JP cards.
@@ -81,7 +103,7 @@ export function extractUniqueOptions(cards: Card[]): {
 
   return {
     setCodes:  [...setCodeSet].sort(),
-    nations:   [...nationSet].sort(),
+    nations:   sortNations([...nationSet]),
     unitTypes: [...unitTypeSet].sort(),
     triggers:  [...triggerSet].sort(),
   };
