@@ -17,7 +17,7 @@ export function buildWishlistRow(
 
   const nameEl = document.createElement("div");
   nameEl.className = "card-row-name";
-  nameEl.textContent = card?.name ?? entry.cardCode;
+  nameEl.textContent = card?.displayName ?? entry.cardCode;
 
   const metaEl = document.createElement("div");
   metaEl.className = "card-row-meta";

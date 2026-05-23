@@ -3,14 +3,14 @@
  * Testable, separate from UI concerns.
  */
 
-import type { Card, UnitType, TriggerType } from "./types.ts";
+import type { Card } from "./types.ts";
 
 export interface FilterState {
   search:   string;
-  setCode:  string;   // "all" untuk no filter
-  nation:   string;   // "all" untuk no filter
-  unitType: string;   // "all" untuk no filter, atau UnitType
-  trigger:  string;   // "all", "__none__", atau TriggerType
+  setCode:  string;   // "all" = no filter
+  nation:   string;   // "all" = no filter
+  unitType: string;   // "all" = no filter
+  trigger:  string;   // "all", "__none__", or trigger value
 }
 
 export const INITIAL_FILTER_STATE: FilterState = {
@@ -21,48 +21,33 @@ export const INITIAL_FILTER_STATE: FilterState = {
   trigger:  "all",
 };
 
-/**
- * Apply filter to cards array.
- * Returns new array dengan cards yang lolos semua filter criteria.
- */
 export function applyFilters(cards: Card[], filter: FilterState): Card[] {
   const query = filter.search.trim().toLowerCase();
 
   return cards.filter((card) => {
-    // Filter: setCode
-    if (filter.setCode !== "all" && card.setCode !== filter.setCode) {
-      return false;
-    }
+    if (filter.setCode !== "all" && card.setCode !== filter.setCode) return false;
+    if (filter.unitType !== "all" && card.unitType !== filter.unitType) return false;
 
-    // Filter: unitType
-    if (filter.unitType !== "all" && card.unitType !== filter.unitType) {
-      return false;
-    }
-
-    // Filter: trigger
     if (filter.trigger !== "all") {
       if (filter.trigger === "__none__") {
-        // "No trigger" - kartu tanpa trigger
         if (card.trigger !== null) return false;
       } else {
         if (card.trigger !== filter.trigger) return false;
       }
     }
 
-    // Filter: nation (single nation match dari array)
     if (filter.nation !== "all") {
       if (!card.nations.includes(filter.nation)) return false;
     }
 
-    // Filter: search text (multi-field)
     if (query) {
       const haystack = [
-        card.name,
-        card.enCardNo,
+        card.displayName,
+        card.cardNo,
         card.setCode,
         card.unitType ?? "",
-        ...(card.races ?? []),
-        ...(card.clan ?? []),
+        ...(card.races   ?? []),
+        ...(card.clan    ?? []),
         ...(card.nations ?? []),
       ].join(" ").toLowerCase();
       if (!haystack.includes(query)) return false;
@@ -73,28 +58,35 @@ export function applyFilters(cards: Card[], filter: FilterState): Card[] {
 }
 
 /**
- * Extract unique values dari cards untuk populate dropdown options.
- * Sorted alphabetically.
+ * Extract unique dropdown values from cards.
+ * unitTypes and triggers are dynamic — correct for both EN and JP cards.
  */
 export function extractUniqueOptions(cards: Card[]): {
-  setCodes: string[];
-  nations:  string[];
+  setCodes:  string[];
+  nations:   string[];
+  unitTypes: string[];
+  triggers:  string[];
 } {
-  const setCodeSet = new Set<string>();
-  const nationSet  = new Set<string>();
+  const setCodeSet  = new Set<string>();
+  const nationSet   = new Set<string>();
+  const unitTypeSet = new Set<string>();
+  const triggerSet  = new Set<string>();
 
   for (const card of cards) {
-    if (card.setCode) setCodeSet.add(card.setCode);
+    if (card.setCode)  setCodeSet.add(card.setCode);
+    if (card.unitType) unitTypeSet.add(card.unitType);
+    if (card.trigger)  triggerSet.add(card.trigger);
     for (const n of card.nations) nationSet.add(n);
   }
 
   return {
-    setCodes: [...setCodeSet].sort(),
-    nations:  [...nationSet].sort(),
+    setCodes:  [...setCodeSet].sort(),
+    nations:   [...nationSet].sort(),
+    unitTypes: [...unitTypeSet].sort(),
+    triggers:  [...triggerSet].sort(),
   };
 }
 
-/** Check apakah ada filter yang aktif (untuk show "Clear filters" button). */
 export function hasActiveFilter(filter: FilterState): boolean {
   return (
     filter.search.trim() !== "" ||
@@ -104,28 +96,6 @@ export function hasActiveFilter(filter: FilterState): boolean {
     filter.trigger  !== "all"
   );
 }
-
-// Constants for dropdown options
-export const UNIT_TYPE_OPTIONS: UnitType[] = [
-  "Normal Unit",
-  "G Unit",
-  "Normal Order",
-  "Set Order",
-  "Blitz Order",
-  "Trigger Order",
-  "Token",
-  "Ride Deck Crest",
-  "Others",
-];
-
-export const TRIGGER_OPTIONS: Exclude<TriggerType, null>[] = [
-  "Critical",
-  "Draw",
-  "Heal",
-  "Front",
-  "Over",
-  "Sentinel",
-];
 
 export type BrowseSortKey = "name" | "code" | "grade-asc" | "grade-desc" | "owned-desc";
 
@@ -137,22 +107,26 @@ export function sortCards(
   const arr = [...cards];
   switch (key) {
     case "name":
-      arr.sort((a, b) => a.name.localeCompare(b.name));
+      arr.sort((a, b) => a.displayName.localeCompare(b.displayName));
       break;
     case "code":
-      arr.sort((a, b) => a.enCardNo.localeCompare(b.enCardNo));
+      arr.sort((a, b) => a.cardNo.localeCompare(b.cardNo));
       break;
     case "grade-asc":
-      arr.sort((a, b) => (a.grade ?? 99) - (b.grade ?? 99) || a.name.localeCompare(b.name));
+      arr.sort((a, b) =>
+        (a.grade ?? 99) - (b.grade ?? 99) || a.displayName.localeCompare(b.displayName),
+      );
       break;
     case "grade-desc":
-      arr.sort((a, b) => (b.grade ?? -1) - (a.grade ?? -1) || a.name.localeCompare(b.name));
+      arr.sort((a, b) =>
+        (b.grade ?? -1) - (a.grade ?? -1) || a.displayName.localeCompare(b.displayName),
+      );
       break;
     case "owned-desc":
       arr.sort((a, b) => {
-        const qa = qtyMap?.get(a.enCardNo) ?? 0;
-        const qb = qtyMap?.get(b.enCardNo) ?? 0;
-        return qb - qa || a.name.localeCompare(b.name);
+        const qa = qtyMap?.get(a.cardNo) ?? 0;
+        const qb = qtyMap?.get(b.cardNo) ?? 0;
+        return qb - qa || a.displayName.localeCompare(b.displayName);
       });
       break;
   }

@@ -10,10 +10,12 @@ import {
 import { showConfirm } from "./confirm-dialog.ts";
 import { trapFocus } from "./focus-trap.ts";
 
+// version field absent = legacy (pre-JP) format; version 2 = includes region
 interface BackupData {
-  collection: CollectionEntry[];
-  wishlist: WishlistEntry[];
-  meta: CacheMeta | null;
+  version?:   number;
+  collection: Array<Omit<CollectionEntry, "region"> & { region?: "EN" | "JP" }>;
+  wishlist:   Array<Omit<WishlistEntry,   "region"> & { region?: "EN" | "JP" }>;
+  meta:       CacheMeta | null;
   exportedAt: number;
   appVersion: string;
 }
@@ -41,11 +43,12 @@ export async function exportBackup(): Promise<"saved" | "cancelled" | "browser">
   ]);
 
   const backup: BackupData = {
+    version: 2,
     collection,
     wishlist,
     meta,
     exportedAt: Date.now(),
-    appVersion: "0.1.0",
+    appVersion: "0.2.0",
   };
 
   const saved = await invoke<boolean>("export_backup", {
@@ -76,6 +79,12 @@ export async function importBackup(
     return "invalid";
   }
 
+  // Legacy format (no version field): all entries belong to EN
+  if (!backup.version) {
+    backup.collection = backup.collection.map((e) => ({ ...e, region: "EN" as const }));
+    backup.wishlist   = backup.wishlist.map((e)   => ({ ...e, region: "EN" as const }));
+  }
+
   const unknownCodes = new Set([
     ...backup.collection.map((e) => e.cardCode).filter((c) => !cardSet.has(c)),
     ...backup.wishlist.map((e) => e.cardCode).filter((c) => !cardSet.has(c)),
@@ -99,10 +108,10 @@ export async function importBackup(
   }
 
   for (const entry of backup.collection) {
-    await mergeOrAdd(entry.cardCode, entry.location, entry.quantity);
+    await mergeOrAdd(entry.cardCode, entry.location, entry.quantity, entry.region ?? "EN");
   }
   for (const entry of backup.wishlist) {
-    await addToWishlist(entry.cardCode);
+    await addToWishlist(entry.cardCode, entry.region ?? "EN");
   }
 
   return {
