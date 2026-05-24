@@ -83,7 +83,12 @@ async fn import_backup(app: tauri::AppHandle) -> Result<Option<String>, String> 
 
 #[tauri::command]
 async fn download_image(url: String, path: String) -> Result<String, String> {
-    let res = reqwest::get(&url).await.map_err(|e| e.to_string())?;
+    let client = reqwest::Client::new();
+    let res = client.get(&url)
+        .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .send()
+        .await
+        .map_err(|e| e.to_string())?;
     if !res.status().is_success() {
         return Err(format!("HTTP {}", res.status()));
     }

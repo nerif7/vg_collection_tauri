@@ -63,12 +63,14 @@ function _downloadBackground(cardNo: string, cdnUrl: string, path: string): void
   if (memCache.has(cardNo) || pendingDownloads.has(cardNo)) return;
   pendingDownloads.add(cardNo);
   invoke<string>("download_image", { url: cdnUrl, path })
-    .then((b64) => { memCache.set(cardNo, `data:${mimeFor(cdnUrl)};base64,${b64}`); })
+    .then((b64) => {
+      console.debug("[image-cache] cached ok", cardNo, b64.length, "chars");
+      memCache.set(cardNo, `data:${mimeFor(cdnUrl)};base64,${b64}`);
+    })
     .catch((e: unknown) => {
+      console.warn("[image-cache] failed", cardNo, String(e));
       if (String(e).startsWith("HTTP 4")) {
         memCache.set(cardNo, null); // 4xx = no image at this URL, don't retry
-      } else {
-        console.error("[image-cache] download failed", cardNo, e);
       }
     })
     .finally(() => pendingDownloads.delete(cardNo));
