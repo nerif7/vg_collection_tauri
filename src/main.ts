@@ -30,6 +30,7 @@ import { showAboutDialog } from "./about-dialog.ts";
 import { showToast } from "./toast.ts";
 import { initThemeToggle } from "./theme.ts";
 import { initBackButton, setOnboardingMode } from "./back-button.ts";
+import { isLightboxOpen, hideLightbox } from "./lightbox.ts";
 import {
   setStartupProgress, setStatus, renderStats, clearStats,
   renderCacheInfo, showUpdateSpinner,
@@ -461,6 +462,7 @@ async function init() {
 
   initThemeToggle();
   initBackButton([
+    { isOpen: isLightboxOpen, close: hideLightbox },
     ...getBrowseBackPanes(),
     {
       isOpen: () => document.getElementById("collectionPreviewPane")?.classList.contains("is-open") ?? false,

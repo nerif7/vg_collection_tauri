@@ -6,6 +6,7 @@ import {
 } from "./collection-db.ts";
 import { getImageSrc } from "./image-cache.ts";
 import { addSwipeToDismiss } from "./swipe-dismiss.ts";
+import { showLightbox, hideLightbox, isLightboxOpen } from "./lightbox.ts";
 
 export interface BrowsePreviewCallbacks {
   onCollectionChanged: () => void;
@@ -16,8 +17,6 @@ export interface BrowsePreviewCallbacks {
 export class CardPreview {
   private panel: HTMLElement;
   private body: HTMLElement;
-  private _lightbox: HTMLElement | null = null;
-  private _lightboxImg: HTMLImageElement | null = null;
   private callbacks: BrowsePreviewCallbacks | null = null;
 
   constructor(panel: HTMLElement) {
@@ -49,11 +48,11 @@ export class CardPreview {
   }
 
   get isLightboxOpen(): boolean {
-    return this._lightbox?.classList.contains("is-open") ?? false;
+    return isLightboxOpen();
   }
 
   hideLightbox(): void {
-    this._hideLightbox();
+    hideLightbox();
   }
 
   private async _render(card: Card): Promise<void> {
@@ -71,7 +70,7 @@ export class CardPreview {
       img.loading = "lazy";
       img.decoding = "async";
       img.title = "Click to enlarge";
-      img.addEventListener("click", () => this._showLightbox(src, card.displayName));
+      img.addEventListener("click", () => showLightbox(src, card.displayName));
       imageWrap.appendChild(img);
     } else {
       const ph = document.createElement("div");
@@ -245,35 +244,6 @@ export class CardPreview {
 
     wrapper.append(addForm, ownedSection, wishlistBtn);
     return wrapper;
-  }
-
-  private _showLightbox(src: string, alt: string): void {
-    if (!this._lightbox) {
-      this._lightbox = document.createElement("div");
-      this._lightbox.className = "lightbox";
-      this._lightbox.addEventListener("click", (e) => {
-        if (e.target === this._lightbox) this._hideLightbox();
-      });
-
-      this._lightboxImg = document.createElement("img");
-      this._lightboxImg.className = "lightbox-img";
-      this._lightbox.appendChild(this._lightboxImg);
-      document.body.appendChild(this._lightbox);
-
-      document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") this._hideLightbox();
-      });
-
-      addSwipeToDismiss(this._lightbox, this._lightbox, () => this._hideLightbox());
-    }
-
-    this._lightboxImg!.src = src;
-    this._lightboxImg!.alt = alt;
-    requestAnimationFrame(() => { this._lightbox!.classList.add("is-open"); });
-  }
-
-  private _hideLightbox(): void {
-    this._lightbox?.classList.remove("is-open");
   }
 
   private _appendTag(

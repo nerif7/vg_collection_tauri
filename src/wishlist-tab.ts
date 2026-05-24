@@ -1,6 +1,7 @@
 import type { Card, WishlistEntry } from "./types.ts";
 import { getAllWishlistEntries, removeFromWishlist } from "./collection-db.ts";
 import { getImageSrc } from "./image-cache.ts";
+import { showLightbox } from "./lightbox.ts";
 import { VirtualList } from "./virtual-list.ts";
 import { VirtualGrid } from "./virtual-grid.ts";
 import { buildCardTile } from "./card-tile.ts";
@@ -246,9 +247,12 @@ async function renderPreview(entry: WishlistEntry): Promise<void> {
     const wrap = document.createElement("div");
     wrap.className = "preview-image-wrap";
     const img = document.createElement("img");
-    img.src = await getImageSrc(card.cardNo, card.imageUrl) ?? card.imageUrl;
+    const src = await getImageSrc(card.cardNo, card.imageUrl) ?? card.imageUrl;
+    img.src = src;
     img.alt = card.displayName;
     img.className = "preview-image"; img.loading = "lazy"; img.decoding = "async";
+    img.title = "Click to enlarge";
+    img.addEventListener("click", () => showLightbox(src, card.displayName));
     wrap.appendChild(img);
     previewBody.appendChild(wrap);
   }

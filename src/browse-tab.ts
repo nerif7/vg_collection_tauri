@@ -238,10 +238,6 @@ export function updateBrowseAvailability(): void {
 export function getBrowseBackPanes(): BackPane[] {
   return [
     {
-      isOpen: () => cardPreview?.isLightboxOpen ?? false,
-      close:  () => cardPreview?.hideLightbox(),
-    },
-    {
       isOpen: () => cardPreview?.isOpen ?? false,
       close:  () => cardPreview?.hide(),
     },
