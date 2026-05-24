@@ -1,5 +1,20 @@
 use tauri_plugin_dialog::DialogExt;
 
+fn bytes_to_base64(bytes: &[u8]) -> String {
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::with_capacity((bytes.len() + 2) / 3 * 4);
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk[0] as usize;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as usize;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as usize;
+        out.push(TABLE[b0 >> 2]);
+        out.push(TABLE[((b0 & 3) << 4) | (b1 >> 4)]);
+        out.push(if chunk.len() > 1 { TABLE[((b1 & 15) << 2) | (b2 >> 6)] } else { b'=' });
+        out.push(if chunk.len() > 2 { TABLE[b2 & 63] } else { b'=' });
+    }
+    String::from_utf8(out).unwrap()
+}
+
 #[tauri::command]
 fn get_userdata_dir(app: tauri::AppHandle) -> Result<String, String> {
     #[cfg(target_os = "android")]
@@ -67,6 +82,22 @@ async fn import_backup(app: tauri::AppHandle) -> Result<Option<String>, String> 
 }
 
 #[tauri::command]
+async fn download_image(url: String, path: String) -> Result<String, String> {
+    let res = reqwest::get(&url).await.map_err(|e| e.to_string())?;
+    if !res.status().is_success() {
+        return Err(format!("HTTP {}", res.status()));
+    }
+    let bytes = res.bytes().await.map_err(|e| e.to_string())?;
+    let b64 = bytes_to_base64(&bytes);
+    let p = std::path::Path::new(&path);
+    if let Some(parent) = p.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    }
+    std::fs::write(p, &b64).map_err(|e| e.to_string())?;
+    Ok(b64)
+}
+
+#[tauri::command]
 fn list_dir_files(path: String) -> Result<Vec<String>, String> {
     let p = std::path::Path::new(&path);
     if !p.exists() {
@@ -101,6 +132,7 @@ pub fn run() {
             write_text_file,
             export_backup,
             import_backup,
+            download_image,
             list_dir_files,
             delete_file,
         ])

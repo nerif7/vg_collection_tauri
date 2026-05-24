@@ -28,16 +28,6 @@ function mimeFor(url: string): string {
   return "image/jpeg";
 }
 
-function arrayBufferToBase64(buf: ArrayBuffer): string {
-  const bytes = new Uint8Array(buf);
-  const CHUNK = 8192;
-  let binary = "";
-  for (let i = 0; i < bytes.length; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(binary);
-}
-
 // ── Core API ──────────────────────────────────────────────────────────────────
 
 /**
@@ -72,13 +62,10 @@ export async function getImageSrc(cardNo: string, cdnUrl: string | null): Promis
 function _downloadBackground(cardNo: string, cdnUrl: string, path: string): void {
   if (memCache.has(cardNo) || pendingDownloads.has(cardNo)) return;
   pendingDownloads.add(cardNo);
-  (async () => {
-    const res = await fetch(cdnUrl);
-    if (!res.ok) return;
-    const b64 = arrayBufferToBase64(await res.arrayBuffer());
-    await invoke("write_text_file", { path, content: b64 });
-    memCache.set(cardNo, `data:${mimeFor(cdnUrl)};base64,${b64}`);
-  })().catch(() => {}).finally(() => pendingDownloads.delete(cardNo));
+  invoke<string>("download_image", { url: cdnUrl, path })
+    .then((b64) => { memCache.set(cardNo, `data:${mimeFor(cdnUrl)};base64,${b64}`); })
+    .catch((e) => console.error("[image-cache] download failed", cardNo, e))
+    .finally(() => pendingDownloads.delete(cardNo));
 }
 
 // ── Cache management ──────────────────────────────────────────────────────────
