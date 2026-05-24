@@ -3,8 +3,9 @@ import { getUserdataDir } from "./cache.ts";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const memCache         = new Map<string, string>(); // cardNo → data URL
-const pendingDownloads = new Set<string>();          // cardNos currently being fetched
+// null = permanently unavailable (4xx from CDN — don't retry this session)
+const memCache         = new Map<string, string | null>(); // cardNo → data URL | null
+const pendingDownloads = new Set<string>();                // cardNos currently being fetched
 
 let _imagesDir: string | null = null;
 
@@ -39,9 +40,8 @@ function mimeFor(url: string): string {
 export async function getImageSrc(cardNo: string, cdnUrl: string | null): Promise<string | null> {
   if (!cdnUrl) return null;
 
-  // Fast path: in-memory hit.
-  const mem = memCache.get(cardNo);
-  if (mem) return mem;
+  // Fast path: in-memory hit (null = permanently unavailable this session).
+  if (memCache.has(cardNo)) return memCache.get(cardNo) ?? null;
 
   const dir  = await getImagesDir();
   const path = `${dir}/${fileKey(cardNo)}`;
@@ -64,7 +64,13 @@ function _downloadBackground(cardNo: string, cdnUrl: string, path: string): void
   pendingDownloads.add(cardNo);
   invoke<string>("download_image", { url: cdnUrl, path })
     .then((b64) => { memCache.set(cardNo, `data:${mimeFor(cdnUrl)};base64,${b64}`); })
-    .catch((e) => console.error("[image-cache] download failed", cardNo, e))
+    .catch((e: unknown) => {
+      if (String(e).startsWith("HTTP 4")) {
+        memCache.set(cardNo, null); // 4xx = no image at this URL, don't retry
+      } else {
+        console.error("[image-cache] download failed", cardNo, e);
+      }
+    })
     .finally(() => pendingDownloads.delete(cardNo));
 }
 
