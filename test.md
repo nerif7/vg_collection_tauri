@@ -17,13 +17,13 @@ Dokumen ini merekap semua test case yang sudah diverifikasi, supaya tidak ada ya
 |---|---|---|---|
 | 1 | `cdnUrl = null` → return null | Static | ✅ |
 | 2 | Mem cache hit → return data URL instantly, no IPC | Static | ✅ |
-| 3 | Disk hit (file ada) → read base64, set memCache, return data URL | Static | ✅ |
-| 4 | Disk miss + online → return CDN URL, trigger background download | Static | ✅ |
+| 3 | Disk hit (file ada) → read base64, set memCache, return data URL | Manual | ✅ verified — b64 508k chars returned, no re-download |
+| 4 | Disk miss + online → return CDN URL, trigger background download | Manual | ✅ verified — files muncul di userdata/images/ |
 | 5 | Disk miss + offline → return CDN URL, download fails silently, retry next open | Static | ✅ |
-| 6 | Restart app → memCache kosong, disk hit → data URL ter-load kembali | Static | ✅ |
+| 6 | Restart app → memCache kosong, disk hit → data URL ter-load kembali | Manual | ✅ verified — offline test pass |
 | 7 | Preview dibuka 2× cepat sebelum download selesai → `pendingDownloads` guard, 1 download saja | Static | ✅ |
 | 8 | Download selesai, preview ke-2 dibuka → memCache hit | Static | ✅ |
-| 9 | Gambar ditampilkan offline setelah pernah di-cache | Manual | 🔲 |
+| 9 | Gambar ditampilkan offline setelah pernah di-cache | Manual | ✅ verified — offline restart, gambar tampil dari disk |
 | 10 | Broken image saat offline + belum pernah di-cache | Manual | 🔲 |
 
 ### `arrayBufferToBase64`
@@ -83,7 +83,7 @@ Dokumen ini merekap semua test case yang sudah diverifikasi, supaya tidak ada ya
 |---|---|---|---|
 | 37 | ❌ `fetch(cdnUrl)` diblok CSP karena CDN tidak di `connect-src` | Static | ✅ Fixed |
 | 38 | CDN domains ditambah ke `connect-src` di `tauri.conf.json` | Static | ✅ |
-| 39 | `fetch()` ke CDN berhasil di Tauri production build | Manual | 🔲 |
+| 39 | Download image via Rust `download_image` command berhasil (bypass CORS + User-Agent) | Manual | ✅ verified — files ter-cache di userdata/images/ |
 
 ### Path & Storage
 
@@ -99,8 +99,8 @@ Dokumen ini merekap semua test case yang sudah diverifikasi, supaya tidak ada ya
 
 | # | Scenario | Method | Status |
 |---|---|---|---|
-| 45 | Download gagal (network error) → `.catch(() => {})` silent, retry next open | Static | ✅ |
-| 46 | `res.ok = false` (404, 403) → return early, tidak write file invalid | Static | ✅ |
+| 45 | Download gagal (network error) → error logged, retry next open | Static | ✅ |
+| 46 | ❌ CDN return 404 tanpa User-Agent (hotlink protection) → fixed: add Chrome UA header | Manual | ✅ verified |
 | 47 | `clearAllImageCache` throws → global `unhandledrejection` handler → toast | Static | ✅ |
 | 48 | `clearOrphanedImageCache` throws → global handler → toast | Static | ✅ |
 | 49 | File rusak/truncated di disk → broken image, user bisa manual clear | Static | ✅ (acceptable) |
@@ -724,4 +724,4 @@ Dokumen ini merekap semua test case yang sudah diverifikasi, supaya tidak ada ya
 
 ---
 
-*Last updated: Phase 9 (offline image cache) review — 2026-05-24. Total: 335 test cases.*
+*Last updated: Phase 9 manual testing — 2026-05-24. Total: 335 test cases.*
