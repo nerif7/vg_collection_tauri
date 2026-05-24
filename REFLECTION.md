@@ -386,6 +386,44 @@ In single-region mode, `#regionSwitchBtn` is hidden.
 
 ---
 
+### Bug 12: JS `fetch()` blocked by CORS when downloading card images ✅ Fixed
+
+**What happened:** The first implementation of `_downloadBackground` in `image-cache.ts` used `fetch(cdnUrl)` to download card images. Every download attempt failed with `TypeError: Failed to fetch`.
+
+**Root cause:** CDN image servers (en.cf-vanguard.com, cf-vanguard.com) serve images only for `<img src>` usage and do not include `Access-Control-Allow-Origin` response headers. `<img src>` requests are "no-cors" — the browser renders bytes without exposing them to JS. Programmatic `fetch()` calls enforce CORS and block the response when that header is absent.
+
+**The fix:** Moved the HTTP download to Rust using `reqwest`. Rust is not a browser — it has no CORS concept and just makes an HTTP request like any native client.
+
+**Lesson:** CORS is a browser-enforced policy applied to `fetch()` and `XHR` — NOT to `<img>`, `<video>`, or CSS `url()`. If a CDN works in an `<img>` tag but fails with `fetch()`, CORS is the first thing to check. Moving network I/O to the Rust side fully bypasses it.
+
+---
+
+### Bug 13: CDN returns fake 404 to non-browser User-Agents ✅ Fixed
+
+**What happened:** After moving the download to Rust, the CDN started returning HTTP 404 for valid image URLs. Direct PowerShell test with `Invoke-WebRequest` confirmed the same URL returned 200. Rust reqwest with default User-Agent got 404.
+
+**Root cause:** CDN uses fake HTTP 404 (not 403) as hotlink/bot protection. Requests without a browser-like `User-Agent` header are silently rejected as if the resource doesn't exist. The deception is intentional — a 403 would signal "blocked," a 404 doesn't reveal the protection exists.
+
+**The fix:** Added a Chrome User-Agent header to the reqwest client. 404s disappeared.
+
+**Distinguishing from genuine 404:** Some old Vanguard sets (original BT01, DZ-BT series) genuinely have no CDN images. These return 404 even with the correct User-Agent. The `memCache` null sentinel (`Map<string, string | null>`) handles this: 4xx → cache `null` → all future previews of that card skip the network entirely this session.
+
+**Lesson:** A 404 from a CDN is not necessarily "file not found." CDN operators use fake 404 (rather than 403) to avoid revealing they have bot protection. Always verify a 404 with an independent HTTP client that sends browser headers before concluding the resource doesn't exist.
+
+---
+
+### Bug 14: Lightbox missing in Collection and Wishlist preview panes ✅ Fixed
+
+**What happened:** Phase 9 added card images to Collection and Wishlist preview panes. Users clicking the image expected zoom (lightbox) — nothing happened. Browse tab had lightbox; the other two didn't.
+
+**Root cause:** The lightbox was implemented as private methods inside `CardPreview` class (Browse tab only). When Phase 9 added `<img>` elements to Collection/Wishlist previews, no one wired up the click handler — there was no shared lightbox to call.
+
+**The fix:** Extracted `lightbox.ts` — a module-level singleton with three exports (`showLightbox`, `hideLightbox`, `isLightboxOpen`). All three tabs import and call `showLightbox()` on image click. `CardPreview` delegates to the same functions. `main.ts` registers lightbox as the first `BackPane` so Android back button closes it from any tab.
+
+**Lesson:** When a UI element needs to be triggered by multiple independent modules, it belongs in its own module as a singleton — not inside one caller's class. The moment a second caller needs it, it's already time to extract.
+
+---
+
 ### Design decision: base64 text storage vs binary + asset protocol
 
 When implementing offline image cache, there were two realistic options:

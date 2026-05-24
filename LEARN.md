@@ -1578,18 +1578,19 @@ Result: `main.ts` dropped from 649 → 451 lines. `browse-tab.ts` is 249 lines (
 
 **Problem:** Card images load from CDN URLs. At a card shop without WiFi, users can't see card images in their collection.
 
-**Approach: lazy + base64 text storage via existing Rust commands**
+**Approach: lazy + base64 text storage via Rust download**
 
 On each preview open, `getImageSrc(cardNo, cdnUrl)` in `image-cache.ts`:
-1. Checks in-memory Map (instant)
+1. Checks in-memory Map (instant) — `null` value = permanently unavailable this session (4xx), don't retry
 2. Checks `userdata/images/{fileKey(cardNo)}` via `read_text_file` (existing Rust command, ~10–30ms IPC)
 3. If found: returns `data:image/jpeg;base64,{content}` — no network needed
 4. If not: returns CDN URL immediately, starts background download
 
 Background download (`_downloadBackground`):
-- `fetch(cdnUrl)` → `arrayBuffer()` → chunked base64 encode → `write_text_file`
+- Calls Rust `download_image` command — reqwest client with Chrome User-Agent → saves base64 text to disk → resolves with b64 string
 - Protected by `pendingDownloads: Set<string>` — prevents duplicate concurrent fetches for the same card if previews opened in rapid succession
-- Silent failure on network error — retry happens on next preview open
+- On 4xx: caches `null` sentinel in memCache to skip future retries this session
+- Silent failure on other network errors — retry happens on next preview open
 
 **Why base64 text instead of binary file + asset protocol?**
 - `write_text_file` / `read_text_file` already exist — zero new Rust infrastructure
@@ -1598,13 +1599,63 @@ Background download (`_downloadBackground`):
 
 **Sanitizing cardNos as filenames:** Vanguard codes like `V-BT01/001EN` contain `/` which is a path separator on all platforms. `fileKey()` replaces `/` and other filesystem-reserved chars with `_`.
 
-**Chunked base64 encoding:** Character-by-character loop is slow on Android's JS engine. The implementation uses 8192-char chunks via `String.fromCharCode(...bytes.subarray(i, i + CHUNK))` — one function call per 8KB vs one per byte.
-
 **New Rust commands:** `list_dir_files(path)` → filenames in a directory; `delete_file(path)` → idempotent delete. Both follow the existing minimal-surface pattern (no `tauri-plugin-fs` dependency).
 
 **Clear image cache UI:** "Image Cache ▾" button in Browse toolbar opens a context menu with two options — clear all, or clear only images for cards not currently in the collection (orphaned). The latter also catches images cached from Browse-only previews.
 
 ---
 
-*Last updated: browse-tab.ts extraction + offline image cache.*
+### 3.23 Why image download moved to Rust: CORS + CDN hotlink protection
+
+The first implementation of `_downloadBackground` used JS `fetch(cdnUrl)`:
+
+```typescript
+const res = await fetch(cdnUrl);
+const buf = await res.arrayBuffer();
+// encode + save...
+```
+
+This failed with `TypeError: Failed to fetch` — a CORS error.
+
+**Why CORS blocks JS fetch but not `<img src>`:**
+Browsers apply CORS only to *programmatic* fetches (`fetch()`, `XMLHttpRequest`). Loading an image via `<img src>` is a "no-cors" request — the browser just renders the bytes, the JS origin never touches them. CDN servers are configured to serve images to browsers but do NOT include `Access-Control-Allow-Origin` headers, because they expect `<img>` usage only. When WebView JS calls `fetch()` on those URLs, the browser enforces CORS and blocks the response.
+
+**The fix:** Move the HTTP download to Rust (`reqwest`). Rust is not a browser and has no CORS restrictions — it just makes an HTTP request and returns bytes.
+
+**Second bug: CDN returns fake 404 without a browser User-Agent:**
+Even after moving to Rust, the CDN was returning HTTP 404. Direct PowerShell test confirmed the URL was valid. Root cause: the CDN uses fake 404 (not 403) as hotlink protection — requests without a recognizable browser `User-Agent` string are silently rejected as if the resource doesn't exist.
+
+**The fix:** Add a real Chrome User-Agent to the reqwest client:
+```rust
+client.get(&url)
+    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+```
+
+**Distinguishing hotlink-blocked 404 from genuine 404:** Some old sets (BT01, DZ-BT series) genuinely have no CDN images regardless of User-Agent — the image simply doesn't exist. These return 404 with the correct User-Agent too. The `memCache` null sentinel handles this: first 4xx caches `null`, all future previews of that card skip the network check entirely.
+
+---
+
+### 3.24 Shared singleton UI: `lightbox.ts`
+
+When Phase 9 added card images to Collection and Wishlist preview panes, those panes had no click-to-zoom functionality — it had only existed in Browse tab (via `CardPreview` class internals).
+
+**Pattern: extract a singleton DOM element into its own module**
+
+`lightbox.ts` creates one `<div class="lightbox">` element (lazily, on first use) and exports three functions:
+- `showLightbox(src, alt)` — sets image src, adds `is-open` class
+- `hideLightbox()` — removes `is-open` class
+- `isLightboxOpen()` — checks class presence
+
+All three tabs import from `lightbox.ts` and call `showLightbox()` directly on image click. `CardPreview` was refactored to delegate to these functions instead of managing its own private lightbox element.
+
+**Back button integration:** `main.ts` registers the lightbox as the first `BackPane` entry in `initBackButton`. This means Android back button closes the lightbox regardless of which tab opened it — no per-tab wiring needed.
+
+**Why not a class / Why not attach to `CardPreview`?**
+- A class would require passing the instance across module boundaries (circular import risk)
+- Attaching to `CardPreview` would require Collection/Wishlist to import the Browse-specific preview module
+- A module with three exports is the simplest possible shared singleton in TypeScript — no instantiation, no lifecycle management, no import chain
+
+---
+
+*Last updated: Phase 9 offline image cache + lightbox extraction.*
 *See [REFLECTION.md](REFLECTION.md) for personal lessons and growth notes.*
