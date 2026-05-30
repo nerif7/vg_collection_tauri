@@ -18,6 +18,7 @@ export class CardPreview {
   private _lightbox: HTMLElement | null = null;
   private _lightboxImg: HTMLImageElement | null = null;
   private callbacks: BrowsePreviewCallbacks | null = null;
+  private _lastLocation: string = "";
 
   constructor(panel: HTMLElement) {
     this.panel = panel;
@@ -163,12 +164,16 @@ export class CardPreview {
         opt.textContent = loc;
         locSelect.appendChild(opt);
       }
+      if (this._lastLocation && locations.includes(this._lastLocation)) {
+        locSelect.value = this._lastLocation;
+      }
 
       addBtn.addEventListener("click", async () => {
         addBtn.disabled = true;
         try {
           const qty = Math.max(1, parseInt(qtyInput.value, 10) || 1);
           const loc = locSelect.value;
+          this._lastLocation = loc;
           await mergeOrAdd(card.enCardNo, loc, qty);
           qtyInput.value = "1";
           this.callbacks?.onCollectionChanged();
