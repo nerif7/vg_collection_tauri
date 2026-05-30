@@ -106,6 +106,7 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Keyboard navigation: Esc closes all modals, Enter/Space activates mode options
 - ✅ `img.decoding="async"` on all card images — decode non-blocking, no main-thread jank
 - ✅ Grouped view memo — skip full DOM re-render when entries+selected+collapsed unchanged
+- ✅ Fix: Browse "Add to Collection" location dropdown remembers last used location across cards
 
 **Phase 7+ — Future (📋 Maybe)**
 - 📋 Bulk edit: select multiple entries → change location or delete in bulk

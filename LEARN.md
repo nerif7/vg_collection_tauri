@@ -1469,5 +1469,5 @@ The sig encodes: which entries exist (by id), their quantities, which entry is s
 
 ---
 
-*Last updated: Phase 6 complete — v0.2.0.*
+*Last updated: Phase 6 complete — v0.2.0. Post-Phase 6: Browse location dropdown now remembers last used location across cards.*
 *See [REFLECTION.md](REFLECTION.md) for personal lessons and growth notes.*

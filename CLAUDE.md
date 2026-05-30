@@ -353,11 +353,19 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 - ✅ Grouped view memo: skip full DOM re-render when entries+selected+collapsed unchanged
 - ✅ Version bump: `0.1.0` → `0.2.0` in `tauri.conf.json`, `package.json`, window title
 
-### Phase 7+ — Future Features (maybe, not in scope now)
+### Post-Phase 6 Fixes
+
+- ✅ Fix: Browse "Add to Collection" location dropdown remembers last used location across cards (`_lastLocation` instance variable on `CardPreview`)
+
+### Phase 7+ — Future Features (no active plans)
 
 - **Deck Builder**: Vanguard deck validation (max 4 copies per card name, 50 cards total), deck export as text list
 - **Bulk edit**: Select multiple collection entries → change location or delete in bulk
 - **Stats breakdown**: Per-set, per-nation, per-rarity collection analytics
+
+### Current Status
+
+App is stable at v0.2.0. User is actively entering real collection data. No new feature development planned at this time.
 
 ---
 

@@ -338,6 +338,26 @@ The fix is one line per image creation site. The lesson: any `<img>` element tha
 
 ---
 
+### Bug 12: Browse location dropdown reset to first location when switching cards ✅ Fixed
+
+**What happened:** In the Browse tab, if a user selected location B from the "Add to Collection" dropdown and added a card, then opened a different card, the dropdown defaulted back to location A (the first option in the list) instead of B.
+
+**Root cause:** `_buildCollectionSection()` in `CardPreview` builds the `<select>` element fresh on every card open, with no memory of the previous selection. The first `<option>` in the list is always selected by default.
+
+**The fix:** Added `private _lastLocation: string = ""` as an instance variable on `CardPreview`. On successful add, `this._lastLocation = loc` is saved. On rebuild, if `_lastLocation` exists in the current locations list, it is pre-set as the select value.
+
+```typescript
+if (this._lastLocation && locations.includes(this._lastLocation)) {
+  locSelect.value = this._lastLocation;
+}
+// ...inside add handler:
+this._lastLocation = loc;
+```
+
+**Lesson:** Any form that the user fills out repeatedly in a session should remember its last state. The fix is always the same pattern: lift the value to a scope that outlives the form's rebuild cycle. In a class, that means an instance variable; in a module, a module-level variable.
+
+---
+
 ## Process Insights
 
 ### The multi-question approach before implementing
