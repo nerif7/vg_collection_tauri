@@ -15,6 +15,7 @@ dist-ssr
 # Android signing keystore (keep private)
 *.jks
 *.keystore
+keystore.properties
 VGCollection-*.zip
 VGCollection-*.apk
 
