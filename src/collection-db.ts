@@ -81,6 +81,10 @@ async function saveLocationsFile(locations: string[]): Promise<void> {
   await saveJsonFile("locations.json", locations);
 }
 
+export async function replaceAllLocations(locations: string[]): Promise<void> {
+  await saveLocationsFile([...new Set(locations)].sort());
+}
+
 // ── ID generation ─────────────────────────────────────────────────────────────
 
 function nextId(entries: CollectionEntry[]): number {

@@ -6,6 +6,7 @@ import {
   getAllCollectionEntries, getAllWishlistEntries,
   mergeOrAdd, addToWishlist,
   clearAllCollectionEntries, clearAllWishlistEntries,
+  getAllLocations, replaceAllLocations, addLocation,
 } from "./collection-db.ts";
 import { showConfirm } from "./confirm-dialog.ts";
 import { trapFocus } from "./focus-trap.ts";
@@ -112,6 +113,20 @@ export async function importBackup(
   }
   for (const entry of backup.wishlist) {
     await addToWishlist(entry.cardCode, entry.region ?? "EN");
+  }
+
+  // Sync locations from backup entries into locations.json
+  const backupLocations = [
+    ...new Set(backup.collection.map((e) => e.location).filter((l): l is string => !!l)),
+  ];
+  if (backupLocations.length > 0) {
+    if (mode === "replace") {
+      await replaceAllLocations(backupLocations);
+    } else {
+      const existing = await getAllLocations();
+      const toAdd = backupLocations.filter((l) => !existing.includes(l));
+      for (const loc of toAdd) await addLocation(loc);
+    }
   }
 
   return {
