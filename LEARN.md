@@ -1674,5 +1674,41 @@ let bytes = app.fs().read(file_path).map_err(|e| e.to_string())?;
 
 ---
 
-*Last updated: Post-Phase 9 — Android release signing + import content URI fix.*
+### 3.26 Desktop preview: centered modal over side panel
+
+The original side panel (`width: 0 → 380px` sliding in from the right) required the list container to shrink when the preview opened. In a grid/virtualized layout, this causes a `ResizeObserver` reflow: column count changes, scroll position resets, and there's a layout shift on every card click.
+
+A centered modal (`position: fixed; inset: 0`) avoids all of this: the list never changes size, and the modal overlays it. This is always the right choice when the preview is supplementary and not part of the page flow.
+
+**Structure change:** `.preview-pane` becomes the backdrop overlay; a new `.preview-inner` wrapper inside it holds the visible content box. This allows:
+- Click on `.preview-pane` (backdrop area) → `e.target === panel` → close
+- Click on `.preview-inner` (content) → event.target is a descendant → no close
+
+**2-column layout via CSS Grid:**
+```css
+.preview-body {
+  display: grid;
+  grid-template-columns: 220px minmax(240px, max-content);
+}
+.preview-image-wrap {
+  grid-column: 1;
+  grid-row: 1 / span 3;  /* span right-column row count */
+  aspect-ratio: 5/7;
+}
+.preview-body > *:not(.preview-image-wrap) {
+  grid-column: 2;
+}
+```
+
+No JS changes needed — pure CSS grid assigns image to column 1, all siblings to column 2.
+
+**`span 3` not `span 20`:** Larger span values create empty implicit rows which, with `gap: 12px`, add invisible vertical space. Match span to actual right-column item count.
+
+**Adaptive width:** `width: fit-content` on `.preview-inner` + `minmax(240px, max-content)` on the right column makes the modal shrink for short card names and expand for long ones, capped at `max-width: 740px`. `.preview-name { max-width: 36ch }` prevents excessively long names from widening the modal beyond a readable line length.
+
+**Mobile unaffected:** `@media (max-width: 767px)` overrides `.preview-inner { width: 100% }` and `.preview-body { display: flex; flex-direction: column }` — the grid is completely replaced by a flex column, restoring the bottom sheet layout.
+
+---
+
+*Last updated: Post-Phase 9 — desktop preview → modal popup, 2-column layout, adaptive width.*
 *See [REFLECTION.md](REFLECTION.md) for personal lessons and growth notes.*

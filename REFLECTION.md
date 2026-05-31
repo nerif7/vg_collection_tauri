@@ -440,6 +440,16 @@ Chose Option B. The storage overhead (10–40 MB for a typical collection) is ac
 
 **Lesson:** Reusing existing infrastructure (even at a storage cost) reduces the surface area that can break. Premature optimization of storage format is not worth the configuration complexity.
 
+### Design Note: CSS Grid `grid-row: 1 / span N` gap trap
+
+When using CSS Grid to make one item span multiple rows (e.g., an image spanning the full height of a side column), setting `span 20` on the image creates 20 implicit rows. With `gap: 12px`, this adds `(20 - actual_rows) × 12px` of invisible vertical space — in this case ~216px of empty space at the bottom of the modal.
+
+**Fix:** Count the actual number of items in the other column (right column had 2-3 items), and use `span 3` or `span 4` instead of an arbitrarily large number. Each excess row costs one `gap` unit of space.
+
+**Lesson:** `grid-row: 1 / span N` creates N rows regardless of content. Match span to actual content row count.
+
+---
+
 ### Bug 15: Browse location dropdown reset to first location when switching cards ✅ Fixed
 
 **What happened:** In the Browse tab, selecting location B and adding a card, then opening a different card, the dropdown defaulted back to location A instead of B.

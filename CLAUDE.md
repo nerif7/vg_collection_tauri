@@ -425,6 +425,9 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 - ✅ Android release signing — keystore + `signingConfigs` in `build.gradle.kts`; `keystore.properties` git-ignored
 - ✅ Fix: `kotlin.incremental=false` in `gradle.properties` — cross-drive compile error (project on E:, cargo on C:)
 - ✅ Fix: `tauri-plugin-fs` added; `import_backup` uses `app.fs().read(file_path)` to handle Android content URIs (replaces `into_path()` which fails on `content://...`)
+- ✅ UX: Desktop preview pane changed from side panel → centered modal popup; mobile bottom sheet unchanged
+- ✅ UX: Modal layout 2-column (image portrait left, card details right); image uses `aspect-ratio: 5/7`
+- ✅ UX: Modal width adaptive (`fit-content` + `minmax(240px, max-content)` right column) — shrinks for short card names, expands for long ones; cap 740px
 
 ### Phase 10+ — Future Features (maybe, not in scope now)
 

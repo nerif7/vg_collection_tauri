@@ -27,8 +27,13 @@ export class CardPreview {
     panel.querySelector<HTMLButtonElement>("#previewClose")
       ?.addEventListener("click", () => this.hide());
 
+    panel.addEventListener("click", (e) => {
+      if (e.target === panel) this.hide();
+    });
+
+    const inner = panel.querySelector<HTMLElement>(".preview-inner");
     const header = panel.querySelector<HTMLElement>(".preview-header");
-    if (header) addSwipeToDismiss(panel, header, () => this.hide());
+    if (inner && header) addSwipeToDismiss(inner, header, () => this.hide());
   }
 
   setCallbacks(cb: BrowsePreviewCallbacks): void {

@@ -48,8 +48,9 @@ export function initWishlistTab(cards: Card[]): void {
 
   statsBody = createStatsCollapsible(statsEl);
 
+  const previewInner  = previewPane.querySelector<HTMLElement>(".preview-inner");
   const previewHeader = previewPane.querySelector<HTMLElement>(".preview-header");
-  if (previewHeader) addSwipeToDismiss(previewPane, previewHeader, closePreview);
+  if (previewInner && previewHeader) addSwipeToDismiss(previewInner, previewHeader, closePreview);
 
   searchEl      = document.getElementById("wishlistSearch")       as HTMLInputElement;
   sortEl        = document.getElementById("wishlistSort")         as HTMLSelectElement;
@@ -58,6 +59,7 @@ export function initWishlistTab(cards: Card[]): void {
   viewToggleBtn = document.getElementById("wishlistViewToggle")   as HTMLButtonElement;
 
   previewClose.addEventListener("click", closePreview);
+  previewPane.addEventListener("click", (e) => { if (e.target === previewPane) closePreview(); });
 
   searchEl.addEventListener("input",        applyFilters);
   sortEl.addEventListener("change",         applyFilters);

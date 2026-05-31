@@ -75,7 +75,7 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 **Phase 5 — Mobile-first UI (✅ Done)**
 - ✅ Full CSS rewrite with **Tailwind CSS v4** (`@import "tailwindcss"`, `@theme inline`)
 - ✅ Mobile bottom navigation bar (Collection | Wishlist | Browse with icons)
-- ✅ Preview pane: **bottom sheet** on mobile (85dvh, slides up), side panel on desktop
+- ✅ Preview pane: **bottom sheet** on mobile (85dvh, slides up), side panel on desktop (later changed to modal popup in Post-Phase 9)
 - ✅ Collapsible stats bar on mobile — tap "Stats ›" to expand/collapse
 - ✅ Filter bar: search-only by default on mobile, "⊟ Filter" button to expand dropdowns
 - ✅ Header: active tab name only on mobile, full app name on desktop
@@ -137,6 +137,8 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Fix: `kotlin.incremental=false` in `gradle.properties` — Kotlin daemon cross-drive crash (project E:, cargo C:)
 - ✅ Fix: Import backup on Android failed with "INVALID URL PATH" — added `tauri-plugin-fs`; `import_backup` now uses `app.fs().read()` to handle Android content URIs
 - ✅ Fix: Browse "Add to Collection" location dropdown remembers last used location across cards
+- ✅ UX: Desktop preview pane → centered modal popup (was: side panel); mobile bottom sheet unchanged
+- ✅ UX: Modal 2-column layout — portrait card image left, details right; adaptive width fits card name
 
 **Phase 10+ — Future (📋 Maybe)**
 - 📋 Bulk edit: select multiple entries → change location or delete in bulk

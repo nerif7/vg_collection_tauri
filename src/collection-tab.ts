@@ -70,8 +70,9 @@ export function initCollectionTab(cards: Card[], regionPreference: "EN" | "JP" |
 
   statsBody = createStatsCollapsible(statsEl);
 
+  const previewInner  = previewPane.querySelector<HTMLElement>(".preview-inner");
   const previewHeader = previewPane.querySelector<HTMLElement>(".preview-header");
-  if (previewHeader) addSwipeToDismiss(previewPane, previewHeader, closePreview);
+  if (previewInner && previewHeader) addSwipeToDismiss(previewInner, previewHeader, closePreview);
 
   sortEl         = document.getElementById("collectionSort")       as HTMLSelectElement;
   locFilterEl    = document.getElementById("collectionLocFilter")   as HTMLSelectElement;
@@ -81,6 +82,7 @@ export function initCollectionTab(cards: Card[], regionPreference: "EN" | "JP" |
   groupToggleBtn = document.getElementById("collectionGroupToggle") as HTMLButtonElement;
 
   previewClose.addEventListener("click", closePreview);
+  previewPane.addEventListener("click", (e) => { if (e.target === previewPane) closePreview(); });
 
   document.getElementById("manageLocationsBtn")?.addEventListener("click", () => {
     openLocationManager(async () => {
