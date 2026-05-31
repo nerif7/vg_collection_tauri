@@ -39,7 +39,7 @@ import { loadSettings, saveSettings } from "./settings.ts";
 import { showOnboarding } from "./onboarding.ts";
 import { runSync, scheduleDebounce } from "./sync.ts";
 import { loadSession } from "./auth.ts";
-import { initSyncButton } from "./sync-menu.ts";
+import { initSyncButton, updateSyncTimestamp } from "./sync-menu.ts";
 import "./styles.css";
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -370,7 +370,7 @@ async function handleSyncResult(result: Awaited<ReturnType<typeof runSync>>): Pr
       ]);
       break;
     case "pushed":
-      // Silent — background push tidak perlu ganggu user
+      updateSyncTimestamp();
       break;
     case "unauthorized":
       showToast("Sync session expired — please sign in again", "error");

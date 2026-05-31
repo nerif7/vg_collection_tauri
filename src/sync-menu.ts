@@ -3,6 +3,11 @@ import { runSync } from "./sync.ts";
 import { showToast } from "./toast.ts";
 import { trapFocus } from "./focus-trap.ts";
 
+export function updateSyncTimestamp(): void {
+  const btn = document.getElementById("syncBtn") as HTMLButtonElement | null;
+  if (btn) btn.title = `${btn.title.split(" — ")[0]} — synced just now`;
+}
+
 export function initSyncButton(): void {
   const btn = document.getElementById("syncBtn") as HTMLButtonElement;
   btn.addEventListener("click", () => void openSyncMenu(btn));
