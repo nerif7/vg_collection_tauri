@@ -9,7 +9,11 @@ export function updateSyncTimestamp(): void {
 }
 
 export function initSyncButton(): void {
+  const placeholder = document.getElementById("syncBtnPlaceholder");
   const btn = document.getElementById("syncBtn") as HTMLButtonElement;
+  // Reveal sync button — signals app is ready to user
+  placeholder?.remove();
+  btn.hidden = false;
   btn.addEventListener("click", () => void openSyncMenu(btn));
   void refreshSyncBtnState();
 }
@@ -76,11 +80,19 @@ async function openSyncMenu(anchor: HTMLButtonElement): Promise<void> {
         const session = await signInWithGoogle();
         await refreshSyncBtnState();
         showToast(`Signed in as ${session.email}`, "success");
-        // Auto-buka menu agar user lihat konfirmasi email + tombol Sync now
-        const btn = document.getElementById("syncBtn") as HTMLButtonElement;
-        void openSyncMenu(btn);
-        const { handleSyncOutcome } = await import("./main.ts");
-        handleSyncOutcome(await runSync());
+        // Beri UI waktu render sebelum mulai sync (cegah white/black flash)
+        setTimeout(async () => {
+          try {
+            const syncBtn = document.getElementById("syncBtn") as HTMLButtonElement | null;
+            if (syncBtn) { syncBtn.textContent = "↻"; syncBtn.disabled = true; }
+            const { handleSyncOutcome } = await import("./main.ts");
+            handleSyncOutcome(await runSync());
+          } finally {
+            await refreshSyncBtnState();
+            const syncBtn = document.getElementById("syncBtn") as HTMLButtonElement | null;
+            if (syncBtn) syncBtn.disabled = false;
+          }
+        }, 800);
       } catch (err) {
         showToast(`Sign in failed: ${err instanceof Error ? err.message : String(err)}`, "error");
       } finally {
