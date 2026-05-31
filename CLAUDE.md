@@ -429,6 +429,131 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 - ✅ UX: Modal layout 2-column (image portrait left, card details right); image uses `aspect-ratio: 5/7`
 - ✅ UX: Modal width adaptive (`fit-content` + `minmax(240px, max-content)` right column) — shrinks for short card names, expands for long ones; cap 740px
 
+### Phase 10 — Cloud Sync (Planned, not yet implemented)
+
+**Branch**: `feature/cloud-sync` (dibuat saat implementasi dimulai)
+
+**Tujuan**: Sync otomatis collection + wishlist + locations antar device (PC ↔ Android) tanpa user harus update dua kali.
+
+#### Architecture
+
+```
+Tauri App (PC + Android)  ◄──HTTPS──►  Cloudflare Worker (Edge API)
+  src/auth.ts                             POST /auth/google
+  src/sync.ts                             GET  /sync
+  src/sync-dialog.ts                      PUT  /sync
+  userdata/auth.json                      DELETE /sync
+                                          D1 Database (SQLite)
+```
+
+#### Infrastructure
+- **Backend**: Cloudflare Workers + D1 (SQLite) — free tier, no server maintenance
+- **Auth**: Google OAuth 2.0 + PKCE (no client_secret — safe for native apps)
+- **JWT**: Worker-issued JWT 30 hari (bukan Google token langsung — Google token expire 1 jam)
+- **Free tier headroom**: 100k req/day limit; 50 users × 10 sync/day = 500 req/day
+
+#### Requirements (locked)
+
+| Aspek | Keputusan |
+|---|---|
+| User scope | Multi-user; tiap orang punya koleksi sendiri, tidak share |
+| Auth | Google account (OAuth 2.0 + PKCE) |
+| Sync timing | Debounced 5 detik setelah edit + otomatis saat app dibuka (fallback offline) |
+| Data synced | `collection.json`, `wishlist.json`, `locations.json` |
+| Data NOT synced | `settings.json` (per-device), image cache (terlalu besar) |
+| Conflict resolution | Per-entry UI — user pilih lokal vs remote per kartu konflik |
+| Sync failure | Toast "Sync gagal, bekerja offline" — tidak blocking |
+| Target users | 2–5 sekarang, didesain untuk 50 |
+
+#### D1 Schema
+
+```sql
+CREATE TABLE IF NOT EXISTS users (
+  id TEXT PRIMARY KEY,       -- Google sub
+  email TEXT NOT NULL,
+  created_at INTEGER NOT NULL
+);
+CREATE TABLE IF NOT EXISTS sync_data (
+  user_id          TEXT    PRIMARY KEY REFERENCES users(id),
+  collection_json  TEXT    NOT NULL DEFAULT '[]',
+  wishlist_json    TEXT    NOT NULL DEFAULT '[]',
+  locations_json   TEXT    NOT NULL DEFAULT '["my collection"]',
+  last_modified_at INTEGER NOT NULL,
+  app_version      TEXT
+);
+```
+
+#### Conflict Detection Algorithm
+
+```
+localDirty  = localModifiedAt > lastSyncedAt
+remoteDirty = remote.last_modified_at > lastSyncedAt
+
+if !localDirty && !remoteDirty → nothing to do
+if localDirty  && !remoteDirty → push local
+if !localDirty && remoteDirty  → pull remote
+if localDirty  && remoteDirty  → per-entry conflict UI
+```
+
+Per-entry: "local added only" dan "remote added only" → auto-merge tanpa tanya. Hanya `(same cardCode+location+region, different qty)` → tampilkan ke user.
+
+#### New Files
+
+- `cloudflare-worker/src/index.ts` — Router + CORS
+- `cloudflare-worker/src/auth.ts` — Google verify + JWT issue
+- `cloudflare-worker/src/sync.ts` — D1 CRUD
+- `cloudflare-worker/wrangler.toml` + `schema.sql` + `package.json`
+- `src/auth.ts` — PKCE flow, session storage, login/logout
+- `src/sync.ts` — sync orchestrator
+- `src/sync-dialog.ts` — conflict resolution modal
+
+#### Modified Files
+
+- `src/types.ts` — add `AuthSession`, `SyncPayload`, `ConflictEntry`
+- `src/main.ts` — call `syncOnStartup()` after tab init
+- `index.html` — sync status + Sign in button in header
+- `tauri.conf.json` — CSP update + `deepLinkProtocols: ["vgcollection"]`
+- `src-tauri/Cargo.toml` — add `tauri-plugin-deep-link`
+- `src-tauri/src/lib.rs` — register deep-link plugin + handler
+- `src-tauri/capabilities/default.json` — add `deep-link:default`
+- `src-tauri/gen/android/app/src/main/AndroidManifest.xml` — deep link intent filter
+
+#### Known Gaps (belum diputuskan, lihat plan file untuk detail)
+
+| # | Gap | Prioritas |
+|---|---|---|
+| 1 | Login device kedua dengan data lokal → conflict storm | Kritis |
+| 5 | Race condition dua device push bersamaan → silent overwrite | Kritis |
+| 18 | Multiple sync concurrent → behavior tidak terduga | Kritis |
+| 7 | Wishlist/locations tidak ada conflict detection → silent overwrite | Tinggi |
+| 4 | Clock skew antar device → false localDirty | Tinggi |
+| 9 | Partial push success → false conflict | Sedang |
+| 8 | Move entry conflict → duplikasi | Sedang |
+| 12 | Schema mismatch antar versi app | Sedang |
+| 2 | JWT expire saat app terbuka → silent fail | Sedang |
+| 11 | Debounce tanpa max delay → tidak push saat sesi panjang | Sedang |
+| 6 | Pull lalu mtime > lastSyncedAt → false localDirty | Rendah |
+| 10 | Android kill debounce timer | Rendah (acceptable) |
+| 13 | Corrupted JSON di-push ke cloud | Rendah |
+| 14 | Tidak ada backup sebelum conflict resolution | Rendah |
+| 16 | Tidak ada indikator "data sudah aman di cloud" | Rendah |
+| 17 | Conflict dialog belum mobile-friendly | Rendah |
+| 20 | Worker URL di-hardcode | Rendah |
+| 21 | Tidak ada onboarding untuk teman | Rendah |
+
+#### Phase Breakdown
+
+- **10a**: Cloudflare + D1 + Google Cloud setup → Worker live, test dengan curl
+- **10b**: Auth di Tauri (PKCE flow, Sign in with Google, session storage)
+- **10c**: Basic sync — push/pull, toast, last-sync status, manual sync button
+- **10d**: Conflict resolution UI per-entry
+
+#### Infrastructure Setup Prerequisites (manual, one-time)
+
+1. Buat Cloudflare account (gratis) → `wrangler login` → `wrangler d1 create vg-collection-sync`
+2. Google Cloud Console → buat project → enable Google Identity API → OAuth 2.0 Desktop Client ID → catat `client_id`
+3. Add redirect URI: `vgcollection://auth/callback`
+
 ### Phase 10+ — Future Features (maybe, not in scope now)
 
 - **Deck Builder**: Vanguard deck validation (max 4 copies per card name, 50 cards total), deck export as text list
@@ -437,7 +562,7 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 
 ### Current Status
 
-App is stable at v0.3.0. Android release APK signed and working. User is actively entering real collection data. No new feature development planned at this time.
+App is stable at v0.3.0. Android release APK signed and working. User is actively entering real collection data. Phase 10 (Cloud Sync) is planned and designed — implementation pending user request.
 
 ---
 
@@ -510,8 +635,8 @@ Measured on Windows 11, 24,262 cards / 10.09 MB:
 
 Before every commit, update all three docs in the same commit:
 1. `README.md` — phase status, new features, module structure changes
-2. `LEARN.md` — add or update any Decision Log entry, Deep Dive, or "What I Would Do Differently" that reflects work done in this commit
-3. `REFLECTION.md` — if any bug was fixed or lesson learned, document it here
+2. `docs/LEARN.md` — add or update any Decision Log entry, Deep Dive, or "What I Would Do Differently" that reflects work done in this commit
+3. `docs/REFLECTION.md` — if any bug was fixed or lesson learned, document it here
 
 After every commit (including push), ask: **"Apakah kita perlu review CLAUDE.md untuk arah pengembangan selanjutnya?"**
 
