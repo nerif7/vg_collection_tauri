@@ -1,5 +1,5 @@
 import { loadSession, signInWithGoogle, signOut } from "./auth.ts";
-import { runSync } from "./sync.ts";
+import { runSync, setAuthInProgress } from "./sync.ts";
 import { showToast } from "./toast.ts";
 import { trapFocus } from "./focus-trap.ts";
 
@@ -71,6 +71,7 @@ async function openSyncMenu(anchor: HTMLButtonElement): Promise<void> {
     _appendMenuItem(menu, "☁  Sign in with Google", "btn-primary", async () => {
       backdrop.remove();
       try {
+        setAuthInProgress(true);
         showToast("Opening Google sign in…");
         const session = await signInWithGoogle();
         await refreshSyncBtnState();
@@ -82,6 +83,8 @@ async function openSyncMenu(anchor: HTMLButtonElement): Promise<void> {
         handleSyncOutcome(await runSync());
       } catch (err) {
         showToast(`Sign in failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+      } finally {
+        setAuthInProgress(false);
       }
     });
   } else {

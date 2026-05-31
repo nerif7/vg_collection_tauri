@@ -131,6 +131,10 @@ export function detectConflicts(
 
 let _syncInProgress = false;
 let _pendingSync    = false;
+let _authInProgress = false;
+
+// Call this before/after signInWithGoogle so startup sync doesn't race with auth
+export function setAuthInProgress(val: boolean): void { _authInProgress = val; }
 
 export type SyncOutcome =
   | { status: "not_logged_in" }
@@ -143,6 +147,7 @@ export type SyncOutcome =
   | { status: "error"; message: string };
 
 export async function runSync(): Promise<SyncOutcome> {
+  if (_authInProgress) return { status: "not_logged_in" };
   if (_syncInProgress) { _pendingSync = true; return { status: "up_to_date" }; }
   _syncInProgress = true;
   try {

@@ -128,11 +128,18 @@ export async function signInWithGoogle(): Promise<AuthSession> {
   const code   = parsed.searchParams.get("code");
   if (!code) throw new Error("No authorization code in callback URL");
 
-  const res = await fetch(`${WORKER_URL}/auth/google`, {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ code, codeVerifier, redirectUri }),
-  });
+  // Retry once on fetch failure — first attempt may fail on Android cold start (DNS/TLS)
+  const exchangeBody = JSON.stringify({ code, codeVerifier, redirectUri });
+  let res = await fetch(`${WORKER_URL}/auth/google`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: exchangeBody,
+  }).catch(() => null);
+
+  if (!res) {
+    await new Promise<void>((r) => setTimeout(r, 1500));
+    res = await fetch(`${WORKER_URL}/auth/google`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: exchangeBody,
+    });
+  }
 
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { detail?: string };
