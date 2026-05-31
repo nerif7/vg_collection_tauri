@@ -1312,118 +1312,158 @@ Status legend: ⬜ Belum diputuskan | ✅ Sudah diputuskan | 🚫 Won't fix
 
 ### Autentikasi & Session
 
-**Gap 1 — Login device kedua dengan data lokal yang sudah ada** ⬜
-Skenario: Android dipakai beberapa hari tanpa login (200 entry lokal). Lalu login Google. PC sudah punya cloud data. `lastSyncedAt = 0` di Android → `localDirty = true`, `remoteDirty = true` → conflict dialog untuk semua 200 entry sekaligus.
-Opsi: (a) Kalau `lastSyncedAt = 0` → skip conflict, langsung pull remote + merge lokal; (b) Tanya user: "Gabungkan data lokal dengan cloud?" sebelum sync pertama.
-Keputusan: ___
+**Gap 1 — Login device kedua dengan data lokal yang sudah ada** ✅
+Skenario: Android dipakai beberapa hari tanpa login (200 entry lokal). Lalu login Google. PC sudah punya cloud data. `lastSyncedAt = 0` → kedua sisi dianggap dirty → conflict storm.
+Keputusan: Saat `lastSyncedAt = 0` (pertama kali login), tampilkan dialog khusus:
+- "Device ini punya X kartu lokal. Cloud punya Y kartu."
+- Pilihan: **Gabungkan** (mergeOrAdd lokal + remote) | **Pakai Cloud** | **Ekspor lokal dulu** (trigger export manual ke file sebelum sync)
+- Bukan conflict dialog biasa — satu dialog sederhana, bukan per-entry.
 
-**Gap 2 — JWT expire saat app sedang terbuka** ⬜
-Push debounce dapat 401 → silent fail terus sampai restart. Perlu handle 401 → trigger re-auth flow.
-Keputusan: ___
+**Gap 2 — JWT expire saat app sedang terbuka** ✅
+Push debounce dapat 401 → silent fail terus sampai restart.
+Keputusan: Deteksi 401 di `pushToRemote()` dan `fetchRemote()` → tampilkan toast "Sesi login habis" + tombol "Login ulang" → trigger Google OAuth flow baru.
 
-**Gap 3 — Login dengan akun Google yang salah** ⬜
-Dua akun Google → dua sync bucket → data tidak pernah bertemu. Tidak ada peringatan.
-Opsi: Tampilkan email yang sedang login di header/settings supaya user bisa cek.
-Keputusan: ___
+**Gap 3 — Login dengan akun Google yang salah** ✅
+Dua akun Google → dua sync bucket berbeda.
+Keputusan: Settings page tampilkan email akun yang sedang login. User bisa cek dan Sign Out kalau salah akun.
 
 ---
 
 ### Algoritma Sync
 
-**Gap 4 — Clock skew antar device** ⬜
-Jam device salah → mtime perbandingan rusak → `localDirty` selalu true → push terus-menerus.
-Opsi: Gunakan server timestamp (response dari Worker) sebagai referensi waktu, bukan `Date.now()` lokal.
-Keputusan: ___
+**Gap 4 — Clock skew antar device** ✅
+Jam device salah → mtime comparison rusak → `localDirty` selalu true → push terus-menerus.
+Keputusan: Worker return server timestamp di setiap response (`X-Server-Time` header atau di body). Client simpan ini sebagai `lastSyncedAt`, bukan `Date.now()` lokal. Jam device tidak berpengaruh.
 
-**Gap 5 — Race condition dua device push bersamaan** ⬜
-Keduanya push di detik yang sama → satu overwrite yang lain tanpa conflict dialog.
-Opsi: Worker pakai D1 transaction + optimistic locking (`WHERE last_modified_at = expected_value`). Kalau tidak cocok → return 409 Conflict → app trigger re-sync.
-Keputusan: ___
+**Gap 5 — Race condition dua device push bersamaan** ✅
+Keduanya push di detik yang sama → satu overwrite yang lain tanpa notifikasi.
+Keputusan: Optimistic locking di Worker. PUT /sync wajib kirim `expected_last_modified_at` (nilai remote yang diketahui client). Worker: `WHERE last_modified_at = expected_value` dalam D1 transaction. Kalau beda → return 409. Client terima 409 → jalankan `performSync()` ulang (re-sync, bukan push paksa).
 
-**Gap 6 — Pull lalu mtime file > lastSyncedAt** ⬜
-`applyRemotePayload()` tulis file (mtime = now), `saveSyncMeta(Date.now())` dipanggil sesudahnya. Jendela mikrodetik bisa buat `mtime > lastSyncedAt` → false `localDirty` di sync berikutnya.
-Opsi: Setelah pull, set `lastSyncedAt` ke nilai yang sedikit lebih besar dari mtime file yang baru ditulis.
-Keputusan: ___
+**Gap 6 — Pull lalu mtime file > lastSyncedAt** ✅
+`applyRemotePayload()` tulis file (mtime = now), lalu `saveSyncMeta()` dipanggil sesudahnya. Jendela mikrodetik bisa buat `mtime > lastSyncedAt` → false `localDirty` di sync berikutnya.
+Keputusan: Setelah pull, set `lastSyncedAt = serverTimestamp + 1`. Karena `lastSyncedAt` pakai server timestamp (Gap 4), ini menjamin `lastSyncedAt` selalu lebih besar dari mtime file yang baru ditulis.
 
-**Gap 7 — Wishlist dan locations tidak ada conflict detection** ⬜
-`detectConflicts()` hanya cek collection. Wishlist dan locations: device yang push terakhir menang, silent overwrite.
-Opsi: (a) Extend conflict detection ke wishlist + locations; (b) Wishlist/locations pakai last-write-wins (acceptable karena jarang konflik).
-Keputusan: ___
+**Gap 7 — Wishlist dan locations tidak ada conflict detection** 🚫
+`detectConflicts()` hanya cek collection. Wishlist dan locations: device yang push terakhir menang.
+Keputusan: Won't fix. Wishlist dan locations conflict sangat jarang (user jarang edit keduanya di device berbeda saat offline bersamaan). Last-write-wins acceptable untuk kedua data ini.
 
-**Gap 8 — Move entry tidak terdeteksi dengan benar** ⬜
-Move "Red Binder" → "Blue Binder" di PC, edit qty di "Red Binder" di Android (offline) → merge salah, kartu muncul di kedua binder (duplikat).
-Opsi: Deteksi move dengan membandingkan cardCode across semua locations, bukan hanya exact key match.
-Keputusan: ___
+**Gap 8 — Move entry tidak terdeteksi dengan benar** 🚫
+Move "Red Binder" → "Blue Binder" di PC + edit qty "Red Binder" di Android (offline) → duplikat entry.
+Keputusan: Won't fix. `deduplicateCollection()` sudah jalan setiap startup sebagai safety net. Move + edit offline bersamaan sangat jarang terjadi.
 
-**Gap 11 — Debounce tidak punya maximum delay** ⬜
-Edit terus-menerus selama 10 menit → timer selalu reset → tidak pernah push. Data baru di cloud setelah 10 menit + 5 detik terakhir.
-Opsi: Tambah `maxWait` — push paling lambat setiap 60 detik meski masih ada aktivitas.
-Keputusan: ___
+**Gap 11 — Debounce tidak punya maximum delay** ✅
+Edit terus-menerus → timer selalu reset → tidak pernah push selama sesi aktif panjang.
+Keputusan: Tambah `maxWait = 60_000ms`. Push paling lambat setiap 60 detik meski masih ada aktivitas edit. Implementasi: timer kedua yang di-set sekali saat debounce pertama dimulai, tidak direset.
+
+```typescript
+let _debounceTimer: ReturnType<typeof setTimeout> | null = null;
+let _maxWaitTimer:  ReturnType<typeof setTimeout> | null = null;
+
+export function scheduleDebounce(): void {
+  if (_debounceTimer) clearTimeout(_debounceTimer);
+  _debounceTimer = setTimeout(() => { _debounceTimer = null; _doPush(); }, 5_000);
+
+  if (!_maxWaitTimer) {
+    _maxWaitTimer = setTimeout(() => {
+      _maxWaitTimer = null;
+      if (_debounceTimer) { clearTimeout(_debounceTimer); _debounceTimer = null; }
+      _doPush();
+    }, 60_000);
+  }
+}
+
+function _doPush(): void {
+  if (_maxWaitTimer) { clearTimeout(_maxWaitTimer); _maxWaitTimer = null; }
+  // ... push logic
+}
+```
 
 ---
 
 ### Network & Reliability
 
-**Gap 9 — Partial push success** ⬜
-Push sampai ke D1 tapi response timeout → app tidak update `lastSyncedAt` → sync berikutnya deteksi false conflict.
-Opsi: Worker return idempotency key; atau terima false conflict sebagai acceptable (user tinggal pilih, data sama saja).
-Keputusan: ___
+**Gap 9 — Partial push success** 🚫
+Push sampai ke D1 tapi response timeout → `lastSyncedAt` tidak update → false conflict berikutnya.
+Keputusan: Acceptable edge case. Kalau terjadi: conflict dialog muncul, user pilih salah satu, data identik di kedua sisi → tidak ada data loss. Cukup jarang untuk tidak worth kompleksitas idempotency key.
 
-**Gap 10 — Android kill debounce timer** ⬜
-Android Doze mode matikan timer saat app di-background. Debounce 5 detik tidak reliable → fallback ke Opsi 1 (saat buka app). Ini acceptable, hanya perlu didokumentasikan.
-Keputusan: ___
+**Gap 10 — Android kill debounce timer** 🚫
+Android Doze mode matikan timer saat app di-background → debounce 5 detik tidak reliable di Android.
+Keputusan: Acceptable. Fallback ke Opsi 1 (sync saat buka app). Dokumentasikan sebagai known limitation di release notes.
 
 ---
 
 ### Data Integrity
 
-**Gap 12 — Schema mismatch antar versi app** ⬜
-v0.3.0 push data lama, v0.4.0 pull → field baru hilang. `app_version` dikirim tapi Worker tidak melakukan apapun.
-Opsi: Worker validasi `app_version` minimum; atau versioning di payload (`schema_version: 1`).
-Keputusan: ___
+**Gap 12 — Schema mismatch antar versi app** ✅
+v0.3.0 push data lama, v0.4.0 pull → field baru hilang kalau mapping eksplisit.
+Keputusan: Tambah `schema_version: 1` di payload. Konvensi wajib:
+- Field baru selalu **optional** dengan default value
+- Tidak pernah rename atau ubah tipe field yang sudah ada
+- Kalau butuh breaking change → bump `schema_version`, tambah migration function di client:
+```typescript
+function migratePayload(raw: unknown, version: number): SyncPayload {
+  if (version < 2) { /* migrate v1 → v2 */ }
+  return raw as SyncPayload;
+}
+```
+Worker hanya simpan `schema_version`, tidak validasi — migrasi sepenuhnya di client.
 
-**Gap 13 — Corrupted JSON di-push ke cloud** ⬜
+**Gap 13 — Corrupted JSON di-push ke cloud** ✅
 JSON corrupt tapi syntactically valid → Worker simpan → device lain pull data rusak.
-Opsi: Validasi minimal di Worker (cek `Array.isArray(collection)`) sebelum simpan.
-Keputusan: ___
+Keputusan: Validasi minimal di Worker PUT /sync sebelum simpan ke D1:
+```typescript
+if (!Array.isArray(body.collection) || !Array.isArray(body.wishlist) || !Array.isArray(body.locations)) {
+  return c.json({ error: "Invalid payload structure" }, 400);
+}
+```
 
-**Gap 14 — Tidak ada backup sebelum conflict resolution** ⬜
+**Gap 14 — Tidak ada backup sebelum conflict resolution** ✅
 User salah pilih di conflict dialog → data hilang, tidak ada undo.
-Opsi: Auto-export backup lokal sebelum apply conflict resolution.
-Keputusan: ___
+Keputusan: Sebelum menampilkan conflict dialog, auto-simpan snapshot ke `userdata/backups/pre-conflict-{timestamp}.json`. Tidak perlu UI khusus — cukup ada file-nya. User bisa import manual kalau menyesal.
 
 ---
 
 ### UX
 
-**Gap 16 — Tidak ada indikator "data sudah aman di cloud"** ⬜
-Debounce push silent. User tidak tahu apakah data sudah di cloud.
-Opsi: Update "last synced" timestamp di header setelah setiap push berhasil.
-Keputusan: ___
+**Gap 16 — Tidak ada indikator "data sudah aman di cloud"** 🚫
+Debounce push silent — user tidak tahu apakah data sudah di cloud.
+Keputusan: Won't fix. Toast sudah muncul saat pull ("Koleksi diperbarui dari cloud"). Push silent tidak perlu indikator — keep it unobtrusive.
 
-**Gap 17 — Conflict dialog belum mobile-friendly** ⬜
+**Gap 17 — Conflict dialog belum mobile-friendly** 🚫
 Banyak kartu konflik → scroll panjang di layar kecil.
-Opsi: Grouping + "Semua: Pakai Device / Pakai Cloud" di atas sebagai default, expand manual kalau mau per-entry.
-Keputusan: ___
+Keputusan: Won't fix untuk sekarang. Conflict jarang terjadi. Evaluasi ulang saat testing Phase 10d di device nyata.
 
-**Gap 18 — Multiple sync berjalan bersamaan** ⬜
-Debounce fire saat `performSync()` on-open masih jalan → dua sync concurrent.
-Opsi: Flag `_syncInProgress: boolean` — kalau true, skip atau queue sync berikutnya.
-Keputusan: ___
+**Gap 18 — Multiple sync berjalan bersamaan** ✅
+Debounce fire saat `performSync()` on-open masih jalan → concurrent sync → state tidak konsisten.
+Keputusan: Flag + queue satu. Kalau sync sedang jalan dan ada request baru → tandai pending. Setelah selesai → jalankan pending sekali.
+```typescript
+let _syncInProgress = false;
+let _pendingSync    = false;
+
+export async function runSync(): Promise<SyncOutcome> {
+  if (_syncInProgress) { _pendingSync = true; return { status: "up_to_date" }; }
+  _syncInProgress = true;
+  try {
+    return await performSync();
+  } finally {
+    _syncInProgress = false;
+    if (_pendingSync) { _pendingSync = false; runSync(); }
+  }
+}
+```
+Semua caller pakai `runSync()` bukan `performSync()` langsung.
 
 ---
 
 ### Multi-user & Distribution
 
-**Gap 20 — Worker URL di-hardcode** ⬜
+**Gap 20 — Worker URL di-hardcode** ✅
 Ganti Worker URL = recompile + redistribute ke semua teman.
-Opsi: (a) Terima ini sebagai tradeoff; (b) URL bisa diubah di Settings app.
-Keputusan: ___
+Keputusan: Worker URL bisa diubah di Settings app. Default ke URL bawaan. Disimpan di `userdata/settings.json` sebagai `sync_worker_url`. Teman yang deploy Worker sendiri tinggal masukkan URL mereka.
 
-**Gap 21 — Tidak ada onboarding untuk teman** ⬜
-Teman baru install: tidak tahu cara login, tidak tahu Worker URL.
-Opsi: README di release page; atau in-app "Setup Sync" wizard.
-Keputusan: ___
+**Gap 21 — Tidak ada onboarding untuk teman** 🚫
+Teman baru install tidak tahu cara login atau Worker URL.
+Keputusan: Won't fix untuk Phase 10. Dokumentasikan di README release page. In-app setup wizard bisa jadi Phase 11 kalau dibutuhkan.
 
 ---
 
