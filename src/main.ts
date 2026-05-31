@@ -281,7 +281,10 @@ async function handleLoad() {
           renderStats({ count: allEnCards.length, sizeBytes: enMeta.sizeBytes, loadFromCacheMs: loadMs });
           renderCacheInfo(enMeta);
         }
-        checkForUpdatesEn(enMeta).catch(() => {});
+        // On Android delay auto-update — prevents GC pressure from simultaneous
+        // old+new 26MB card arrays during startup rendering
+        const enUpdateDelay = /Android/.test(navigator.userAgent) ? 20_000 : 0;
+        if (enMeta) setTimeout(() => checkForUpdatesEn(enMeta!).catch(() => {}), enUpdateDelay);
       } else {
         await doFetchAndCacheEn();
         setStartupProgress(70);
@@ -307,7 +310,8 @@ async function handleLoad() {
           renderStats({ count: allJpCards.length, sizeBytes: jpMeta.sizeBytes, loadFromCacheMs: loadMs });
           renderCacheInfo(jpMeta);
         }
-        checkForUpdatesJp(jpMeta).catch(() => {});
+        const jpUpdateDelay = /Android/.test(navigator.userAgent) ? 20_000 : 0;
+        if (jpMeta) setTimeout(() => checkForUpdatesJp(jpMeta!).catch(() => {}), jpUpdateDelay);
       } else {
         await doFetchAndCacheJp();
         setStartupProgress(70);
