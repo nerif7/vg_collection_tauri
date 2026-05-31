@@ -117,3 +117,31 @@ export interface VersionInfo {
   newSets:      string[];
   newSetsJp?:   string[];
 }
+
+// ── Cloud sync ────────────────────────────────────────────────────────────────
+
+export interface AuthSession {
+  token:     string;
+  email:     string;
+  expiresAt: number;
+}
+
+export interface SyncPayload {
+  collection:       CollectionEntry[];
+  wishlist:         WishlistEntry[];
+  locations:        string[];
+  last_modified_at: number;
+  app_version?:     string;
+  schema_version?:  number;
+}
+
+export interface SyncMeta {
+  lastSyncedAt: number;
+}
+
+export interface ConflictEntry {
+  cardCode: string;
+  region:   "EN" | "JP";
+  local:    CollectionEntry | null;
+  remote:   CollectionEntry | null;
+}

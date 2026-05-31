@@ -19,7 +19,14 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self' tauri:; img-src 'self' https://en.cf-vanguard.com https://cf-vanguard.com data:; connect-src 'self' https://raw.githubusercontent.com https://api.github.com https://en.cf-vanguard.com https://cf-vanguard.com; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self' tauri:; img-src 'self' https://en.cf-vanguard.com https://cf-vanguard.com data:; connect-src 'self' https://raw.githubusercontent.com https://api.github.com https://en.cf-vanguard.com https://cf-vanguard.com https://vg-collection-sync.rahmanmarwan8.workers.dev https://accounts.google.com https://oauth2.googleapis.com; style-src 'self' 'unsafe-inline'"
+    }
+  },
+  "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["vgcollection"]
+      }
     }
   },
   "bundle": {
