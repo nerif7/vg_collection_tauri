@@ -51,9 +51,14 @@ async function openSyncMenu(anchor: HTMLButtonElement): Promise<void> {
   menu.setAttribute("aria-modal", "true");
   menu.setAttribute("aria-label", "Sync menu");
 
-  // Posisi di bawah tombol sync
-  const rect = anchor.getBoundingClientRect();
-  menu.style.cssText = `position:fixed;top:${rect.bottom + 6}px;right:${window.innerWidth - rect.right}px;z-index:901`;
+  // Desktop: dropdown di bawah tombol. Mobile: centered modal
+  const isMobile = window.innerWidth < 640;
+  if (isMobile) {
+    menu.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:901;width:min(320px,90vw)";
+  } else {
+    const rect = anchor.getBoundingClientRect();
+    menu.style.cssText = `position:fixed;top:${rect.bottom + 6}px;right:${window.innerWidth - rect.right}px;z-index:901`;
+  }
 
   if (!session) {
     _appendMenuItem(menu, "☁  Sign in with Google", "btn-primary", async () => {
