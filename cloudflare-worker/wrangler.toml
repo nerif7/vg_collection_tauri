@@ -1,0 +1,12 @@
+name = "vg-collection-sync"
+main = "src/index.ts"
+compatibility_date = "2024-01-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "vg-collection-sync"
+database_id = "46319ebd-b7ec-4dbb-9f6d-7ea8c09d6045"
+
+[vars]
+GOOGLE_CLIENT_ID = "67040759438-p4utnf2bdnucnc5p2t5asmd81q3o99j3.apps.googleusercontent.com"
