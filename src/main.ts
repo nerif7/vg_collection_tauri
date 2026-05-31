@@ -37,6 +37,8 @@ import {
 } from "./browse-stats.ts";
 import { loadSettings, saveSettings } from "./settings.ts";
 import { showOnboarding } from "./onboarding.ts";
+import { runSync, scheduleDebounce } from "./sync.ts";
+import { loadSession } from "./auth.ts";
 import "./styles.css";
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -313,13 +315,19 @@ async function handleLoad() {
       if (allCards.length > 0) loadBrowseTab(allCards, collectionQtyMap);
     }
 
-    initCollectionTab(allCards, regionPreference, () => { refreshCollectionOverlay().catch(() => {}); });
-    initWishlistTab(allCards);
+    initCollectionTab(allCards, regionPreference, () => {
+      refreshCollectionOverlay().catch(() => {});
+      scheduleDebounce();
+    });
+    initWishlistTab(allCards, () => { scheduleDebounce(); });
     setStartupProgress(85);
     const mergedGroups = await deduplicateCollection();
     if (mergedGroups > 0) showToast(`Cleaned up ${mergedGroups} duplicate collection ${mergedGroups === 1 ? "entry" : "entries"}.`);
     await Promise.all([loadCollectionTab(activeRegion, undefined, regionPreference), loadWishlistTab(activeRegion), refreshCollectionOverlay()]);
     setStartupProgress(100);
+
+    // Sync on startup — non-blocking
+    void handleSyncResult(await runSync());
 
   } catch (err) {
     setStartupProgress(100);
@@ -344,6 +352,73 @@ async function handleForceRefresh() {
     setControlsDisabled(false);
     updateBrowseAvailability();
   }
+}
+
+async function handleSyncResult(result: Awaited<ReturnType<typeof runSync>>): Promise<void> {
+  switch (result.status) {
+    case "pulled":
+      showToast("Collection updated from cloud", "success");
+      await Promise.all([
+        loadCollectionTab(activeRegion, undefined, regionPreference),
+        loadWishlistTab(activeRegion),
+        refreshCollectionOverlay(),
+      ]);
+      break;
+    case "pushed":
+      // Silent — background push tidak perlu ganggu user
+      break;
+    case "unauthorized":
+      showToast("Sync session expired — please sign in again", "error");
+      break;
+    case "error":
+      showToast(`Sync failed, working offline`, "error");
+      break;
+    case "first_login":
+      // Gap 1: device baru login dengan data lokal yang sudah ada
+      await handleFirstLoginSync(result.localCount, result.remoteCount);
+      break;
+    case "conflict":
+      // Phase 10d — placeholder untuk sekarang
+      showToast(`${result.conflicts.length} conflict(s) detected — resolve in next update`, "error");
+      break;
+    // "up_to_date", "not_logged_in" → silent
+  }
+}
+
+async function handleFirstLoginSync(localCount: number, remoteCount: number): Promise<void> {
+  const { showFirstLoginSyncDialog } = await import("./sync-dialog.ts");
+  const session = await loadSession();
+  if (!session) return;
+
+  showFirstLoginSyncDialog(localCount, remoteCount,
+    async (choice) => {
+      if (choice === "export_first") {
+        const { exportBackup: doExport } = await import("./export-import.ts");
+        await doExport();
+      }
+      if (choice === "use_cloud") {
+        const { data: remote } = await fetch(`${(await import("./auth.ts")).WORKER_URL}/sync`, {
+          headers: { Authorization: `Bearer ${session.token}` },
+        }).then((r) => r.json()) as { data: import("./types.ts").SyncPayload };
+        if (remote) {
+          const { invoke } = await import("@tauri-apps/api/core");
+          const dir = await invoke<string>("get_userdata_dir");
+          await Promise.all([
+            invoke("write_text_file", { path: `${dir}/collection.json`, content: JSON.stringify(remote.collection, null, 2) }),
+            invoke("write_text_file", { path: `${dir}/wishlist.json`,   content: JSON.stringify(remote.wishlist,   null, 2) }),
+            invoke("write_text_file", { path: `${dir}/locations.json`,  content: JSON.stringify(remote.locations,  null, 2) }),
+          ]);
+          await Promise.all([
+            loadCollectionTab(activeRegion, undefined, regionPreference),
+            loadWishlistTab(activeRegion),
+            refreshCollectionOverlay(),
+          ]);
+          showToast("Collection replaced with cloud data", "success");
+        }
+      }
+      // "merge" dan "cancel" → tidak perlu action, data lokal tetap
+    }
+  );
 }
 
 async function handleClearCache() {

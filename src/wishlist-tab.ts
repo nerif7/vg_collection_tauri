@@ -40,10 +40,12 @@ let typeFilterEl:  HTMLSelectElement;
 let viewToggleBtn: HTMLButtonElement;
 
 let statsBody: HTMLElement | null = null;
+let _onChange: (() => void) | undefined;
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 
-export function initWishlistTab(cards: Card[]): void {
+export function initWishlistTab(cards: Card[], onChange?: () => void): void {
+  _onChange = onChange;
   cardMap = new Map(cards.map((c) => [c.cardNo, c]));
 
   statsBody = createStatsCollapsible(statsEl);
@@ -279,6 +281,7 @@ async function renderPreview(entry: WishlistEntry): Promise<void> {
     else virtualGrid?.setItems(visibleEntries);
     renderStats();
     closePreview();
+    _onChange?.();
   });
   previewBody.appendChild(removeBtn);
 }
