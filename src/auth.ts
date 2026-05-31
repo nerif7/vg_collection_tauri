@@ -3,6 +3,45 @@ import { once } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 const OAUTH_CALLBACK_EVENT = "oauth-callback";
+const _isAndroid = navigator.userAgent.includes("Android");
+
+// Waits for OAuth callback URL — uses Tauri event (desktop) or file polling on focus (Android)
+function _waitForOAuthCallback(): Promise<string> {
+  return new Promise<string>((resolve, reject) => {
+    let settled = false;
+    const settle = (url: string) => {
+      if (settled) return;
+      settled = true;
+      unlistenEvent();
+      window.removeEventListener("focus", onFocus);
+      resolve(url);
+    };
+
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      unlistenEvent();
+      window.removeEventListener("focus", onFocus);
+      reject(new Error("Login timeout — return to the app after signing in"));
+    }, 5 * 60 * 1000);
+
+    // Tauri event — reliable on desktop, may fail on Android background
+    let unlistenEvent = () => {};
+    once<string>(OAUTH_CALLBACK_EVENT, ({ payload }) => {
+      clearTimeout(timeout);
+      settle(payload);
+    }).then((fn) => { unlistenEvent = fn; });
+
+    // Android fallback: poll pending-oauth.txt when app regains focus
+    const onFocus = async () => {
+      if (settled) return;
+      const cmd = _isAndroid ? "read_pending_oauth_android" : "read_pending_oauth";
+      const url = await invoke<string | null>(cmd).catch(() => null);
+      if (url) { clearTimeout(timeout); settle(url); }
+    };
+    window.addEventListener("focus", onFocus);
+  });
+}
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string;
 export const WORKER_URL = import.meta.env.VITE_WORKER_URL as string;
@@ -69,10 +108,7 @@ export async function signInWithGoogle(): Promise<AuthSession> {
   const port = await invoke<number>("start_oauth_listener");
   const redirectUri = `http://127.0.0.1:${port}/callback`;
 
-  const callbackPromise = new Promise<string>((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error("Login timeout")), 5 * 60 * 1000);
-    once<string>(OAUTH_CALLBACK_EVENT, ({ payload }) => { clearTimeout(timeout); resolve(payload); });
-  });
+  const callbackPromise = _waitForOAuthCallback();
 
   const params = new URLSearchParams({
     client_id:             GOOGLE_CLIENT_ID,

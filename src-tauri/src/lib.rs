@@ -152,7 +152,6 @@ async fn start_oauth_listener(app: tauri::AppHandle) -> Result<u16, String> {
             let n = stream.read(&mut buf).unwrap_or(0);
             let request = String::from_utf8_lossy(&buf[..n]);
 
-            // Extract path+query from "GET /callback?code=... HTTP/1.1"
             let url = request
                 .lines()
                 .next()
@@ -160,10 +159,10 @@ async fn start_oauth_listener(app: tauri::AppHandle) -> Result<u16, String> {
                 .map(|path| format!("http://127.0.0.1:{}{}", port, path))
                 .unwrap_or_default();
 
-            // Return a friendly page to the browser
+            // Return a friendly page — prompts user to return to the app
             let body = "<html><body style='font-family:sans-serif;text-align:center;padding:60px'>\
                 <h2>✅ Authentication successful</h2>\
-                <p>You can close this tab and return to the app.</p>\
+                <p>Return to the <strong>VG Collection</strong> app to complete sign in.</p>\
                 </body></html>";
             let response = format!(
                 "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}",
@@ -171,11 +170,53 @@ async fn start_oauth_listener(app: tauri::AppHandle) -> Result<u16, String> {
             );
             let _ = stream.write_all(response.as_bytes());
 
+            // Save callback URL to file — JS polls this when app resumes (reliable on Android)
+            use tauri::Manager;
+            if let Ok(data_dir) = app.path().app_data_dir() {
+                let pending = data_dir.join("userdata").join("pending-oauth.txt");
+                if let Some(parent) = pending.parent() {
+                    let _ = std::fs::create_dir_all(parent);
+                }
+                let _ = std::fs::write(&pending, &url);
+            }
+
+            // Also try event (works when app is in foreground/desktop)
             let _ = tauri::Emitter::emit(&app, "oauth-callback", url);
         }
     });
 
     Ok(port)
+}
+
+#[tauri::command]
+fn read_pending_oauth() -> Result<Option<String>, String> {
+    // Called by JS when app resumes — reads the pending OAuth callback URL if any
+    let exe_dir = {
+        #[cfg(target_os = "android")]
+        { return Ok(None); } // Android uses app_data_dir path below
+        #[cfg(not(target_os = "android"))]
+        std::env::current_exe()
+            .map_err(|e| e.to_string())?
+            .parent()
+            .ok_or("no parent")?
+            .to_path_buf()
+    };
+    let pending = exe_dir.join("userdata").join("pending-oauth.txt");
+    if !pending.exists() { return Ok(None); }
+    let url = std::fs::read_to_string(&pending).map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_file(&pending);
+    Ok(Some(url))
+}
+
+#[tauri::command]
+async fn read_pending_oauth_android(app: tauri::AppHandle) -> Result<Option<String>, String> {
+    use tauri::Manager;
+    let data_dir = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    let pending = data_dir.join("userdata").join("pending-oauth.txt");
+    if !pending.exists() { return Ok(None); }
+    let url = std::fs::read_to_string(&pending).map_err(|e| e.to_string())?;
+    let _ = std::fs::remove_file(&pending);
+    Ok(Some(url))
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -196,6 +237,8 @@ pub fn run() {
             delete_file,
             get_file_mtime,
             start_oauth_listener,
+            read_pending_oauth,
+            read_pending_oauth_android,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
