@@ -9,13 +9,14 @@ export function showFirstLoginSyncDialog(
   onChoice:    (choice: FirstLoginChoice) => void
 ): void {
   const backdrop = document.createElement("div");
-  backdrop.className = "confirm-backdrop";
+  backdrop.className = "modal-overlay is-open";
   backdrop.setAttribute("role", "dialog");
   backdrop.setAttribute("aria-modal", "true");
   backdrop.setAttribute("aria-labelledby", "first-login-title");
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) { backdrop.remove(); onChoice("cancel"); } });
 
   const box = document.createElement("div");
-  box.className = "confirm-box";
+  box.className = "confirm-dialog";
   box.style.maxWidth = "460px";
 
   const title = document.createElement("h2");
@@ -87,13 +88,14 @@ export function showConflictDialog(
   );
 
   const backdrop = document.createElement("div");
-  backdrop.className = "confirm-backdrop";
+  backdrop.className = "modal-overlay is-open";
   backdrop.setAttribute("role", "dialog");
   backdrop.setAttribute("aria-modal", "true");
   backdrop.setAttribute("aria-labelledby", "conflict-title");
+  backdrop.addEventListener("click", (e) => { if (e.target === backdrop) { backdrop.remove(); onCancel(); } });
 
   const box = document.createElement("div");
-  box.className = "confirm-box";
+  box.className = "confirm-dialog";
   box.style.maxWidth = "520px";
   box.style.maxHeight = "80vh";
   box.style.overflowY = "auto";
