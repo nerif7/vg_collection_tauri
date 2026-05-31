@@ -188,24 +188,25 @@ async fn start_oauth_listener(app: tauri::AppHandle) -> Result<u16, String> {
     Ok(port)
 }
 
+#[cfg(not(target_os = "android"))]
 #[tauri::command]
 fn read_pending_oauth() -> Result<Option<String>, String> {
-    // Called by JS when app resumes — reads the pending OAuth callback URL if any
-    let exe_dir = {
-        #[cfg(target_os = "android")]
-        { return Ok(None); } // Android uses app_data_dir path below
-        #[cfg(not(target_os = "android"))]
-        std::env::current_exe()
-            .map_err(|e| e.to_string())?
-            .parent()
-            .ok_or("no parent")?
-            .to_path_buf()
-    };
+    let exe_dir = std::env::current_exe()
+        .map_err(|e| e.to_string())?
+        .parent()
+        .ok_or("no parent")?
+        .to_path_buf();
     let pending = exe_dir.join("userdata").join("pending-oauth.txt");
     if !pending.exists() { return Ok(None); }
     let url = std::fs::read_to_string(&pending).map_err(|e| e.to_string())?;
     let _ = std::fs::remove_file(&pending);
     Ok(Some(url))
+}
+
+#[cfg(target_os = "android")]
+#[tauri::command]
+fn read_pending_oauth() -> Result<Option<String>, String> {
+    Ok(None) // Android uses read_pending_oauth_android instead
 }
 
 #[tauri::command]
