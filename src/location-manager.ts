@@ -1,4 +1,4 @@
-import { getAllLocations, addLocation, removeLocation } from "./collection-db.ts";
+import { getAllLocations, addLocation, removeLocation, renameLocation } from "./collection-db.ts";
 import { showConfirm } from "./confirm-dialog.ts";
 
 let _overlay: HTMLElement | null = null;
@@ -85,8 +85,70 @@ async function _render(): Promise<void> {
     for (const loc of locations) {
       const li = document.createElement("li");
       li.className = "location-list-item";
+
       const nameSpan = document.createElement("span");
+      nameSpan.className = "location-name";
       nameSpan.textContent = loc;
+
+      const renameInput = document.createElement("input");
+      renameInput.type = "text";
+      renameInput.className = "location-rename-input";
+      renameInput.value = loc;
+      renameInput.hidden = true;
+      renameInput.setAttribute("aria-label", `Rename ${loc}`);
+
+      const renameBtn = document.createElement("button");
+      renameBtn.type = "button";
+      renameBtn.className = "location-rename-btn";
+      renameBtn.textContent = "✎";
+      renameBtn.title = "Rename location";
+
+      const confirmRenameBtn = document.createElement("button");
+      confirmRenameBtn.type = "button";
+      confirmRenameBtn.className = "btn-primary btn-sm";
+      confirmRenameBtn.textContent = "Save";
+      confirmRenameBtn.hidden = true;
+
+      const cancelRenameBtn = document.createElement("button");
+      cancelRenameBtn.type = "button";
+      cancelRenameBtn.className = "btn-neutral btn-sm";
+      cancelRenameBtn.textContent = "Cancel";
+      cancelRenameBtn.hidden = true;
+
+      const startRename = () => {
+        nameSpan.hidden = true;
+        renameBtn.hidden = true;
+        renameInput.hidden = false;
+        confirmRenameBtn.hidden = false;
+        cancelRenameBtn.hidden = false;
+        renameInput.focus();
+        renameInput.select();
+      };
+
+      const cancelRename = () => {
+        nameSpan.hidden = false;
+        renameBtn.hidden = false;
+        renameInput.hidden = true;
+        confirmRenameBtn.hidden = true;
+        cancelRenameBtn.hidden = true;
+        renameInput.value = loc;
+      };
+
+      const doRename = async () => {
+        const newName = renameInput.value.trim();
+        if (!newName || newName === loc) { cancelRename(); return; }
+        await renameLocation(loc, newName);
+        _render();
+      };
+
+      renameBtn.addEventListener("click", startRename);
+      cancelRenameBtn.addEventListener("click", cancelRename);
+      confirmRenameBtn.addEventListener("click", doRename);
+      renameInput.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") doRename();
+        if (e.key === "Escape") cancelRename();
+      });
+
       const delBtn = document.createElement("button");
       delBtn.type = "button";
       delBtn.className = "location-delete-btn";
@@ -98,7 +160,8 @@ async function _render(): Promise<void> {
         await removeLocation(loc);
         _render();
       });
-      li.append(nameSpan, delBtn);
+
+      li.append(nameSpan, renameInput, renameBtn, confirmRenameBtn, cancelRenameBtn, delBtn);
       list.appendChild(li);
     }
   }

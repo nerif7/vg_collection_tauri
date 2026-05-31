@@ -7,7 +7,7 @@ import {
   fetchVersionInfo, loadFromCache, loadFromCacheJp,
   type CacheMeta,
 } from "./cache.ts";
-import { getCollectionQtyMap, deduplicateCollection, getAllCollectionCardNos } from "./collection-db.ts";
+import { getCollectionQtyMap, deduplicateCollection, getAllCollectionCardNos, clearAllCollectionEntries } from "./collection-db.ts";
 import { TabNav } from "./tab-nav.ts";
 import {
   initCollectionTab, loadCollectionTab,
@@ -534,6 +534,23 @@ async function init() {
         `${(result as ImportResult).wishlistCount} wishlist entries.${unknownMsg}`
       );
     }
+  });
+
+  document.getElementById("clearCollectionBtn")?.addEventListener("click", async () => {
+    const first = await showConfirm(
+      "Clear ALL collection entries?\n\nThis will permanently delete every card in your collection. This cannot be undone."
+    );
+    if (!first) return;
+    const second = await showConfirm(
+      "Are you absolutely sure?\n\nAll collection data will be lost forever."
+    );
+    if (!second) return;
+    await clearAllCollectionEntries();
+    await Promise.all([
+      loadCollectionTab(activeRegion, undefined, regionPreference),
+      refreshCollectionOverlay(),
+    ]);
+    showToast("Collection cleared.");
   });
 
   document.getElementById("regionBtn")?.addEventListener("click", handleChangeRegion);
