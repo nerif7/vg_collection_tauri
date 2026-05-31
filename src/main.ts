@@ -228,6 +228,9 @@ async function openChangeRegionDialog(): Promise<void> {
 
 // ── Load handlers ─────────────────────────────────────────────────────────────
 
+// Yield to browser paint loop between heavy operations — critical on Android
+const yieldToUI = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+
 async function handleLoad() {
   const settings = await loadSettings();
 
@@ -283,6 +286,7 @@ async function handleLoad() {
         await doFetchAndCacheEn();
         setStartupProgress(70);
       }
+      await yieldToUI(); // breathe after heavy JSON parse
     }
 
     // ── Load JP ───────────────────────────────────────────────────────────
@@ -308,6 +312,7 @@ async function handleLoad() {
         await doFetchAndCacheJp();
         setStartupProgress(70);
       }
+      await yieldToUI(); // breathe after heavy JSON parse
     }
 
     // Safety: ensure allCards pointer is set (BOTH mode edge cases)
@@ -322,13 +327,25 @@ async function handleLoad() {
     });
     initWishlistTab(allCards, () => { scheduleDebounce(); });
     setStartupProgress(85);
+    await yieldToUI();
+
     const mergedGroups = await deduplicateCollection();
     if (mergedGroups > 0) showToast(`Cleaned up ${mergedGroups} duplicate collection ${mergedGroups === 1 ? "entry" : "entries"}.`);
-    await Promise.all([loadCollectionTab(activeRegion, undefined, regionPreference), loadWishlistTab(activeRegion), refreshCollectionOverlay()]);
-    setStartupProgress(100);
 
-    // Defer sync — give UI time to render before hitting network + file reads
-    setTimeout(() => void runSync().then(handleSyncResult), 1000);
+    // Sequential load — less peak load than Promise.all, better on Android
+    await loadCollectionTab(activeRegion, undefined, regionPreference);
+    await yieldToUI();
+    await loadWishlistTab(activeRegion);
+    await yieldToUI();
+    await refreshCollectionOverlay();
+    setStartupProgress(100);
+    await yieldToUI();
+
+    // Init sync button only after startup — prevents login attempts during heavy load
+    initSyncButton();
+
+    // Sync is safe to start now — UI is fully rendered
+    setTimeout(() => void runSync().then(handleSyncResult), 500);
 
   } catch (err) {
     setStartupProgress(100);
@@ -558,7 +575,7 @@ async function init() {
   document.getElementById("aboutBtn")?.addEventListener("click", showAboutDialog);
 
   initThemeToggle();
-  initSyncButton();
+  // initSyncButton is called in handleLoad() after startup completes
   initBackButton([
     { isOpen: isLightboxOpen, close: hideLightbox },
     ...getBrowseBackPanes(),
