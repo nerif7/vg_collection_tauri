@@ -327,8 +327,8 @@ async function handleLoad() {
     await Promise.all([loadCollectionTab(activeRegion, undefined, regionPreference), loadWishlistTab(activeRegion), refreshCollectionOverlay()]);
     setStartupProgress(100);
 
-    // Sync on startup — non-blocking
-    void handleSyncResult(await runSync());
+    // Defer sync — give UI time to render before hitting network + file reads
+    setTimeout(() => void runSync().then(handleSyncResult), 1000);
 
   } catch (err) {
     setStartupProgress(100);
