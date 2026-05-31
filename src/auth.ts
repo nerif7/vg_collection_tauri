@@ -1,10 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
-import { once, listen } from "@tauri-apps/api/event";
+import { once } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-const OAUTH_CALLBACK_EVENT  = "oauth-callback";   // loopback (desktop)
-const DEEP_LINK_EVENT       = "deep-link://new-url"; // deep link (Android)
-const ANDROID_REDIRECT_URI  = "vgcollection://auth/callback";
+const OAUTH_CALLBACK_EVENT = "oauth-callback";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string;
 export const WORKER_URL = import.meta.env.VITE_WORKER_URL as string;
@@ -63,36 +61,18 @@ export async function clearSession(): Promise<void> {
 
 // ── Google OAuth PKCE flow ────────────────────────────────────────────────────
 
-const _isAndroid = navigator.userAgent.includes("Android");
-
 export async function signInWithGoogle(): Promise<AuthSession> {
   const codeVerifier  = generateCodeVerifier();
   const codeChallenge = await generateCodeChallenge(codeVerifier);
 
-  let redirectUri: string;
-  let callbackPromise: Promise<string>;
+  // Loopback works on both desktop and Android (same-device localhost)
+  const port = await invoke<number>("start_oauth_listener");
+  const redirectUri = `http://127.0.0.1:${port}/callback`;
 
-  if (_isAndroid) {
-    // Android: deep link — browser redirects vgcollection://auth/callback → intent → app
-    redirectUri = ANDROID_REDIRECT_URI;
-    callbackPromise = new Promise<string>((resolve, reject) => {
-      const timeout = setTimeout(() => { unlisten(); reject(new Error("Login timeout")); }, 5 * 60 * 1000);
-      let unlisten: () => void;
-      listen<string>(DEEP_LINK_EVENT, ({ payload }) => {
-        clearTimeout(timeout);
-        unlisten();
-        resolve(payload);
-      }).then((fn) => { unlisten = fn; });
-    });
-  } else {
-    // Desktop: loopback HTTP server — Rust catches redirect and emits event
-    const port = await invoke<number>("start_oauth_listener");
-    redirectUri = `http://127.0.0.1:${port}/callback`;
-    callbackPromise = new Promise<string>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error("Login timeout")), 5 * 60 * 1000);
-      once<string>(OAUTH_CALLBACK_EVENT, ({ payload }) => { clearTimeout(timeout); resolve(payload); });
-    });
-  }
+  const callbackPromise = new Promise<string>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Login timeout")), 5 * 60 * 1000);
+    once<string>(OAUTH_CALLBACK_EVENT, ({ payload }) => { clearTimeout(timeout); resolve(payload); });
+  });
 
   const params = new URLSearchParams({
     client_id:             GOOGLE_CLIENT_ID,
