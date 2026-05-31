@@ -147,6 +147,13 @@
     color: var(--green, #22c55e);
     border-color: var(--green, #22c55e);
   }
+  .sync-btn-label {
+    font-size: 0.78rem;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   @media (hover: hover) {
     .sync-btn:hover { background: var(--bg-muted); color: var(--text); }
   }

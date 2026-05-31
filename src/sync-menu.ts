@@ -13,9 +13,13 @@ export async function refreshSyncBtnState(): Promise<void> {
   const btn = document.getElementById("syncBtn") as HTMLButtonElement;
   const session = await loadSession();
   if (session) {
-    btn.title = `Synced — ${session.email}`;
+    // Tampilkan nama (bagian sebelum @) di dalam tombol
+    const shortName = session.email.split("@")[0];
+    btn.innerHTML = `☁ <span class="sync-btn-label">${shortName}</span>`;
+    btn.title = session.email;
     btn.classList.add("sync-btn--signed-in");
   } else {
+    btn.innerHTML = "☁";
     btn.title = "Sync / Sign in";
     btn.classList.remove("sync-btn--signed-in");
   }
@@ -51,9 +55,12 @@ async function openSyncMenu(anchor: HTMLButtonElement): Promise<void> {
       backdrop.remove();
       try {
         showToast("Opening Google sign in…");
-        await signInWithGoogle();
+        const session = await signInWithGoogle();
         await refreshSyncBtnState();
-        showToast("Signed in — syncing…");
+        showToast(`Signed in as ${session.email}`, "success");
+        // Auto-buka menu agar user lihat konfirmasi email + tombol Sync now
+        const btn = document.getElementById("syncBtn") as HTMLButtonElement;
+        void openSyncMenu(btn);
         const { handleSyncOutcome } = await import("./main.ts");
         handleSyncOutcome(await runSync());
       } catch (err) {
