@@ -15,14 +15,14 @@ export function buildCardRow(
 
   const codeEl = document.createElement("div");
   codeEl.className = "card-row-code";
-  codeEl.textContent = card.enCardNo;
+  codeEl.textContent = card.cardNo;
 
   const middle = document.createElement("div");
   middle.className = "card-row-middle";
 
   const name = document.createElement("div");
   name.className = "card-row-name";
-  name.textContent = card.name;
+  name.textContent = card.displayName;
 
   const meta = document.createElement("div");
   meta.className = "card-row-meta";

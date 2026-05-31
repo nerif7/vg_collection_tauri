@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "VG Collection",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "identifier": "com.nerif.vgcollection",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -13,13 +13,13 @@
     "withGlobalTauri": true,
     "windows": [
       {
-        "title": "Cardfight!! Vanguard Collection Manager v0.2.0",
+        "title": "Cardfight!! Vanguard Collection Manager v0.3.0",
         "width": 1280,
         "height": 800
       }
     ],
     "security": {
-      "csp": "default-src 'self' tauri:; img-src 'self' https://en.cf-vanguard.com data:; connect-src 'self' https://raw.githubusercontent.com https://api.github.com; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self' tauri:; img-src 'self' https://en.cf-vanguard.com https://cf-vanguard.com data:; connect-src 'self' https://raw.githubusercontent.com https://api.github.com https://en.cf-vanguard.com https://cf-vanguard.com; style-src 'self' 'unsafe-inline'"
     }
   },
   "bundle": {

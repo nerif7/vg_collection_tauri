@@ -1,11 +1,14 @@
 import type { Card, WishlistEntry } from "./types.ts";
 import { getAllWishlistEntries, removeFromWishlist } from "./collection-db.ts";
+import { getImageSrc } from "./image-cache.ts";
+import { showLightbox } from "./lightbox.ts";
 import { VirtualList } from "./virtual-list.ts";
 import { VirtualGrid } from "./virtual-grid.ts";
 import { buildCardTile } from "./card-tile.ts";
 import { addSwipeToDismiss } from "./swipe-dismiss.ts";
 import { createStatsCollapsible } from "./stats-collapsible.ts";
 import { buildWishlistRow } from "./wishlist-row.ts";
+import { sortNations } from "./filters.ts";
 
 type WishlistSortKey = "name" | "code" | "nation";
 type WishlistViewMode = "list" | "grid";
@@ -20,6 +23,7 @@ const previewClose  = document.getElementById("wishlistPreviewClose")!;
 
 // ── State ──────────────────────────────────────────────────────────────────────
 
+let _currentRegion: "EN" | "JP" = "EN";
 let allEntries: WishlistEntry[] = [];
 let visibleEntries: WishlistEntry[] = [];
 let cardMap = new Map<string, Card>();
@@ -40,7 +44,7 @@ let statsBody: HTMLElement | null = null;
 // ── Init ───────────────────────────────────────────────────────────────────────
 
 export function initWishlistTab(cards: Card[]): void {
-  cardMap = new Map(cards.map((c) => [c.enCardNo, c]));
+  cardMap = new Map(cards.map((c) => [c.cardNo, c]));
 
   statsBody = createStatsCollapsible(statsEl);
 
@@ -109,11 +113,15 @@ function setViewMode(mode: WishlistViewMode): void {
 
 // ── Load / refresh ─────────────────────────────────────────────────────────────
 
-export async function loadWishlistTab(): Promise<void> {
+export async function loadWishlistTab(region?: "EN" | "JP", cards?: Card[]): Promise<void> {
+  if (region !== undefined) _currentRegion = region;
+  if (cards  !== undefined) cardMap = new Map(cards.map((c) => [c.cardNo, c]));
+
   if (viewMode === "list") virtualList?.setSkeleton(6);
 
   const t0 = performance.now();
-  allEntries = await getAllWishlistEntries();
+  const rawEntries = await getAllWishlistEntries();
+  allEntries = rawEntries.filter((e) => (e.region ?? "EN") === _currentRegion);
   console.debug(`[perf] wishlist DB load: ${(performance.now() - t0).toFixed(1)} ms (${allEntries.length} entries)`);
 
   populateWishlistFilters();
@@ -125,28 +133,32 @@ function populateWishlistFilters(): void {
   const nations = new Set<string>();
   const types   = new Set<string>();
 
+  let hasNationless = false;
   for (const e of allEntries) {
     const card = cardMap.get(e.cardCode);
     if (card) {
-      for (const n of card.nations) nations.add(n);
+      const real = card.nations.filter((n) => !/^[\-‐–—−]+$/.test(n));
+      if (real.length === 0) hasNationless = true;
+      else for (const n of real) nations.add(n);
       if (card.unitType) types.add(card.unitType);
     }
   }
+  if (hasNationless) nations.add("-");
 
   const curNation = nationFilterEl?.value;
   const curType   = typeFilterEl?.value;
 
   const fill = (el: HTMLSelectElement, items: string[], label: string) => {
     el.innerHTML = `<option value="all">${label}</option>`;
-    for (const v of [...items].sort()) {
+    for (const v of items) {
       const opt = document.createElement("option");
       opt.value = v; opt.textContent = v;
       el.appendChild(opt);
     }
   };
 
-  fill(nationFilterEl, [...nations], "All nations");
-  fill(typeFilterEl,   [...types],   "All types");
+  fill(nationFilterEl, sortNations([...nations]), "All nations");
+  fill(typeFilterEl,   [...types].sort(),         "All types");
 
   if (curNation) nationFilterEl.value = curNation;
   if (curType)   typeFilterEl.value   = curType;
@@ -157,8 +169,8 @@ function sortWishlist(entries: WishlistEntry[], key: WishlistSortKey): WishlistE
   switch (key) {
     case "name":
       arr.sort((a, b) => {
-        const na = cardMap.get(a.cardCode)?.name ?? a.cardCode;
-        const nb = cardMap.get(b.cardCode)?.name ?? b.cardCode;
+        const na = cardMap.get(a.cardCode)?.displayName ?? a.cardCode;
+        const nb = cardMap.get(b.cardCode)?.displayName ?? b.cardCode;
         return na.localeCompare(nb);
       });
       break;
@@ -180,7 +192,7 @@ function applyFilters(): void {
   const q      = searchEl?.value.trim().toLowerCase() ?? "";
   const nation = nationFilterEl?.value ?? "all";
   const type   = typeFilterEl?.value   ?? "all";
-  const key    = (sortEl?.value ?? "name") as WishlistSortKey;
+  const key    = (sortEl?.value ?? "code") as WishlistSortKey;
 
   let filtered = allEntries;
 
@@ -189,11 +201,14 @@ function applyFilters(): void {
       const card = cardMap.get(e.cardCode);
       return (
         e.cardCode.toLowerCase().includes(q) ||
-        (card?.name.toLowerCase().includes(q) ?? false)
+        (card?.displayName.toLowerCase().includes(q) ?? false)
       );
     });
   }
-  if (nation !== "all") filtered = filtered.filter((e) => cardMap.get(e.cardCode)?.nations.includes(nation) ?? false);
+  if (nation !== "all") filtered = filtered.filter((e) => {
+    const real = (cardMap.get(e.cardCode)?.nations ?? []).filter((n) => !/^[\-‐–—−]+$/.test(n));
+    return nation === "-" ? real.length === 0 : real.includes(nation);
+  });
   if (type   !== "all") filtered = filtered.filter((e) => cardMap.get(e.cardCode)?.unitType === type);
 
   visibleEntries = sortWishlist(filtered, key);
@@ -224,16 +239,20 @@ function openPreview(entry: WishlistEntry): void {
   renderPreview(entry);
 }
 
-function renderPreview(entry: WishlistEntry): void {
+async function renderPreview(entry: WishlistEntry): Promise<void> {
   const card = cardMap.get(entry.cardCode);
   previewBody.innerHTML = "";
 
-  if (card?.imageUrlEn) {
+  if (card?.imageUrl) {
     const wrap = document.createElement("div");
     wrap.className = "preview-image-wrap";
     const img = document.createElement("img");
-    img.src = card.imageUrlEn; img.alt = card.name;
+    const src = await getImageSrc(card.cardNo, card.imageUrl) ?? card.imageUrl;
+    img.src = src;
+    img.alt = card.displayName;
     img.className = "preview-image"; img.loading = "lazy"; img.decoding = "async";
+    img.title = "Click to enlarge";
+    img.addEventListener("click", () => showLightbox(src, card.displayName));
     wrap.appendChild(img);
     previewBody.appendChild(wrap);
   }
@@ -241,7 +260,7 @@ function renderPreview(entry: WishlistEntry): void {
   const info = document.createElement("div");
   info.className = "preview-info";
   const nameEl = document.createElement("div");
-  nameEl.className = "preview-name"; nameEl.textContent = card?.name ?? entry.cardCode;
+  nameEl.className = "preview-name"; nameEl.textContent = card?.displayName ?? entry.cardCode;
   const codeEl = document.createElement("span");
   codeEl.className = "preview-code"; codeEl.textContent = entry.cardCode;
   info.append(nameEl, codeEl);
@@ -251,7 +270,7 @@ function renderPreview(entry: WishlistEntry): void {
   removeBtn.className = "btn-danger btn-remove-collection";
   removeBtn.textContent = "Remove from Wishlist"; removeBtn.type = "button";
   removeBtn.addEventListener("click", async () => {
-    await removeFromWishlist(entry.cardCode);
+    await removeFromWishlist(entry.cardCode, entry.region ?? "EN");
     allEntries = allEntries.filter((e) => e.cardCode !== entry.cardCode);
     visibleEntries = visibleEntries.filter((e) => e.cardCode !== entry.cardCode);
     if (viewMode === "list") virtualList?.setItems(visibleEntries);

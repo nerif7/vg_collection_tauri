@@ -17,7 +17,7 @@ export function buildCollectionRow(
 
   const name = document.createElement("div");
   name.className = "card-row-name";
-  name.textContent = card?.name ?? entry.cardCode;
+  name.textContent = card?.displayName ?? entry.cardCode;
 
   const locationEl = document.createElement("div");
   locationEl.className = "card-row-meta";

@@ -73,4 +73,5 @@ export class TabNav {
   onTabSwitch(fn: (from: TabId, to: TabId) => void): void {
     this.onSwitch = fn;
   }
+
 }

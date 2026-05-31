@@ -1469,5 +1469,193 @@ The sig encodes: which entries exist (by id), their quantities, which entry is s
 
 ---
 
-*Last updated: Phase 6 complete — v0.2.0. Post-Phase 6: Browse location dropdown now remembers last used location across cards.*
+---
+
+### 3.17 Phase 8: Unified Card shape — normalization layer between raw JSON and the app
+
+EN cards (`cards.json`) have `enCardNo`, `name`, `imageUrlEn`. JP cards (`cards_jp.json`) have `jpCardNo`, `nameJp`, `imageUrlJp`. Two options for the app to consume both:
+
+**Option A — Two parallel Card types (`EnCard`, `JpCard`):** Every consumer (row builders, filter functions, preview pane) would need to branch on the type. A `VirtualList<EnCard | JpCard>` would need union-type guards everywhere.
+
+**Option B — Normalize at load time (chosen):**
+```typescript
+export function normalizeEn(raw: RawEnCard): Card {
+  return { ...raw, cardNo: raw.enCardNo, displayName: raw.name, imageUrl: raw.imageUrlEn, region: "EN" };
+}
+export function normalizeJp(raw: RawJpCard): Card {
+  return { ...raw, cardNo: raw.jpCardNo, displayName: raw.nameJp, imageUrl: raw.imageUrlJp, region: "JP" };
+}
+```
+
+`RawEnCard` and `RawJpCard` exist only in `cache.ts` and `types.ts`. The rest of the app only ever sees `Card`. Consumer code (`card-row.ts`, `filters.ts`, `card-preview.ts`) required zero conditional logic — just renamed field references from `enCardNo` → `cardNo`, `name` → `displayName`, `imageUrlEn` → `imageUrl`.
+
+**Trade-off:** The `Card` interface has `unitType: string | null` and `trigger: string | null` (not the `UnitType`/`TriggerType` unions) because JP values are Japanese strings. The type unions are still defined in `types.ts` as documentation for EN values, but aren't enforced on the `Card` interface.
+
+---
+
+### 3.18 Phase 8: region as first-class data in CollectionEntry and WishlistEntry
+
+The naive approach: store EN and JP data in separate files (`collection_en.json`, `collection_jp.json`). This doubles the file I/O code and makes Import/Export more complex.
+
+The chosen approach: add `region: "EN" | "JP"` to `CollectionEntry` and `WishlistEntry`, keep a single `collection.json` and `wishlist.json`. All query functions accept a `region` parameter and filter by it:
+
+```typescript
+// collection-db.ts
+export async function getCollectionEntries(region: "EN" | "JP"): Promise<CollectionEntry[]> {
+  const all = await loadCollectionFile();
+  return all.filter((e) => (e.region ?? "EN") === region);
+}
+```
+
+**Backward compatibility:** Old entries without a `region` field default to `"EN"` via the `?? "EN"` coalesce, applied in `loadCollectionFile()`. No migration script needed.
+
+**Trade-off:** A single `collection.json` means a read + filter on every query instead of reading a smaller per-region file. For a personal collection (< 500 entries), this is imperceptible.
+
+---
+
+### 3.19 Phase 8: nationless filter bug — Unicode-dash in JP scraped data
+
+The JP scraper stored nationless cards with `nations: ["‐"]` (U+2010 Unicode hyphen-minus look-alike) instead of `nations: []`. The EN filter compared against `"-"` (ASCII U+002D). The comparison never matched, so JP nationless cards appeared in no-nation queries but couldn't be explicitly filtered.
+
+The fix: a dash-normalization regex applied in both filter and dropdown extraction:
+```typescript
+const DASH_RE = /^[\-‐–—−]+$/; // ASCII -  U+2010  en-dash  em-dash  minus
+const realNations = card.nations.filter((n) => !DASH_RE.test(n));
+if (filter.nation === "-") {
+  if (realNations.length !== 0) return false;
+} else {
+  if (!realNations.includes(filter.nation)) return false;
+}
+```
+
+The same pattern runs in `filters.ts` (`applyFilters`, `extractUniqueOptions`), `collection-tab.ts` (`populateCollectionFilters`), and `wishlist-tab.ts` (`populateWishlistFilters`) — every place that builds the nation dropdown or filters by nation.
+
+**Root fix:** `fix_data.js` Fix 4 patched the one affected card in `cards_jp.json` (DAIGO V-SS08/005). The scraper was also updated to skip all Unicode-dash variants going forward. The regex in the app code remains as a defensive layer for any edge cases.
+
+---
+
+### 3.20 Phase 8: nation priority sort — EN and JP equivalents interleaved
+
+The nation dropdown in Browse was sorted alphabetically. This meant "Brandt Gate" appeared before "Dragon Empire" despite Dragon Empire being the most popular clan. In JP mode, Japanese nation names (ドラゴンエンパイア) appeared buried in a list sorted by Unicode codepoint, with no relationship to their EN counterparts.
+
+`sortNations()` in `filters.ts` uses a fixed priority list with EN and JP equivalents interleaved:
+```typescript
+const NATION_PRIORITY = [
+  "Dragon Empire",  "ドラゴンエンパイア",
+  "Dark States",    "ダークステイツ",
+  "Keter Sanctuary","ケテルサンクチュアリ",
+  // ...
+  "-",  // nationless last in the priority section
+];
+```
+
+Nations in the priority list appear first, in that order. Nations not in the list fall through to alphabetical sort. This keeps the most-used options at the top without hardcoding all possible set-specific nations.
+
+---
+
+---
+
+### 3.21 Phase 8 refactor: extracting `browse-tab.ts` from `main.ts`
+
+`main.ts` grew to 649 lines after JP integration — Browse tab logic (virtual list, filters, preview pane, availability guard) lived alongside app-level orchestration (region switching, cache loading, settings). The module boundary was blurry.
+
+The extraction followed the same pattern already established by `collection-tab.ts` and `wishlist-tab.ts`: a focused module exports a clean public API, and `main.ts` calls it via callbacks at init time.
+
+**Public API shape (8 exports):**
+- `initBrowseTab(callbacks)` — setup once at app start
+- `loadBrowseTab(cards, qtyMap)` — initial load or background update
+- `reloadBrowseTab(cards, qtyMap)` — region switch; destroys list, repopulates dropdowns
+- `refreshBrowseQtyMap(qtyMap)` — collection mutated; refresh badges only
+- `clearBrowseTab()`, `closeBrowsePreview()`, `updateBrowseAvailability()`, `getBrowseBackPanes()`
+
+Result: `main.ts` dropped from 649 → 451 lines. `browse-tab.ts` is 249 lines (slightly above the ~200 guideline, justified by Browse being the most complex tab).
+
+**Key decision — `updateBrowseAvailability` exposed vs internal:** Called both inside `loadBrowseTab`/`clearBrowseTab` (on data changes) AND from `main.ts`'s `finally` block (on fetch failure where `loadBrowseTab` never runs). Exposing it avoids a separate `onFetchError` callback.
+
+---
+
+### 3.22 Offline image cache — lazy download + base64 storage
+
+**Problem:** Card images load from CDN URLs. At a card shop without WiFi, users can't see card images in their collection.
+
+**Approach: lazy + base64 text storage via Rust download**
+
+On each preview open, `getImageSrc(cardNo, cdnUrl)` in `image-cache.ts`:
+1. Checks in-memory Map (instant) — `null` value = permanently unavailable this session (4xx), don't retry
+2. Checks `userdata/images/{fileKey(cardNo)}` via `read_text_file` (existing Rust command, ~10–30ms IPC)
+3. If found: returns `data:image/jpeg;base64,{content}` — no network needed
+4. If not: returns CDN URL immediately, starts background download
+
+Background download (`_downloadBackground`):
+- Calls Rust `download_image` command — reqwest client with Chrome User-Agent → saves base64 text to disk → resolves with b64 string
+- Protected by `pendingDownloads: Set<string>` — prevents duplicate concurrent fetches for the same card if previews opened in rapid succession
+- On 4xx: caches `null` sentinel in memCache to skip future retries this session
+- Silent failure on other network errors — retry happens on next preview open
+
+**Why base64 text instead of binary file + asset protocol?**
+- `write_text_file` / `read_text_file` already exist — zero new Rust infrastructure
+- Tauri's asset protocol requires additional capability config that can break silently on Tauri updates
+- Trade-off: ~33% storage overhead. A 150KB JPEG → ~200KB on disk. For typical collections (50–200 unique cards) this is 10–40 MB — acceptable
+
+**Sanitizing cardNos as filenames:** Vanguard codes like `V-BT01/001EN` contain `/` which is a path separator on all platforms. `fileKey()` replaces `/` and other filesystem-reserved chars with `_`.
+
+**New Rust commands:** `list_dir_files(path)` → filenames in a directory; `delete_file(path)` → idempotent delete. Both follow the existing minimal-surface pattern (no `tauri-plugin-fs` dependency).
+
+**Clear image cache UI:** "Image Cache ▾" button in Browse toolbar opens a context menu with two options — clear all, or clear only images for cards not currently in the collection (orphaned). The latter also catches images cached from Browse-only previews.
+
+---
+
+### 3.23 Why image download moved to Rust: CORS + CDN hotlink protection
+
+The first implementation of `_downloadBackground` used JS `fetch(cdnUrl)`:
+
+```typescript
+const res = await fetch(cdnUrl);
+const buf = await res.arrayBuffer();
+// encode + save...
+```
+
+This failed with `TypeError: Failed to fetch` — a CORS error.
+
+**Why CORS blocks JS fetch but not `<img src>`:**
+Browsers apply CORS only to *programmatic* fetches (`fetch()`, `XMLHttpRequest`). Loading an image via `<img src>` is a "no-cors" request — the browser just renders the bytes, the JS origin never touches them. CDN servers are configured to serve images to browsers but do NOT include `Access-Control-Allow-Origin` headers, because they expect `<img>` usage only. When WebView JS calls `fetch()` on those URLs, the browser enforces CORS and blocks the response.
+
+**The fix:** Move the HTTP download to Rust (`reqwest`). Rust is not a browser and has no CORS restrictions — it just makes an HTTP request and returns bytes.
+
+**Second bug: CDN returns fake 404 without a browser User-Agent:**
+Even after moving to Rust, the CDN was returning HTTP 404. Direct PowerShell test confirmed the URL was valid. Root cause: the CDN uses fake 404 (not 403) as hotlink protection — requests without a recognizable browser `User-Agent` string are silently rejected as if the resource doesn't exist.
+
+**The fix:** Add a real Chrome User-Agent to the reqwest client:
+```rust
+client.get(&url)
+    .header("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+```
+
+**Distinguishing hotlink-blocked 404 from genuine 404:** Some old sets (BT01, DZ-BT series) genuinely have no CDN images regardless of User-Agent — the image simply doesn't exist. These return 404 with the correct User-Agent too. The `memCache` null sentinel handles this: first 4xx caches `null`, all future previews of that card skip the network check entirely.
+
+---
+
+### 3.24 Shared singleton UI: `lightbox.ts`
+
+When Phase 9 added card images to Collection and Wishlist preview panes, those panes had no click-to-zoom functionality — it had only existed in Browse tab (via `CardPreview` class internals).
+
+**Pattern: extract a singleton DOM element into its own module**
+
+`lightbox.ts` creates one `<div class="lightbox">` element (lazily, on first use) and exports three functions:
+- `showLightbox(src, alt)` — sets image src, adds `is-open` class
+- `hideLightbox()` — removes `is-open` class
+- `isLightboxOpen()` — checks class presence
+
+All three tabs import from `lightbox.ts` and call `showLightbox()` directly on image click. `CardPreview` was refactored to delegate to these functions instead of managing its own private lightbox element.
+
+**Back button integration:** `main.ts` registers the lightbox as the first `BackPane` entry in `initBackButton`. This means Android back button closes the lightbox regardless of which tab opened it — no per-tab wiring needed.
+
+**Why not a class / Why not attach to `CardPreview`?**
+- A class would require passing the instance across module boundaries (circular import risk)
+- Attaching to `CardPreview` would require Collection/Wishlist to import the Browse-specific preview module
+- A module with three exports is the simplest possible shared singleton in TypeScript — no instantiation, no lifecycle management, no import chain
+
+---
+
+*Last updated: Phase 9 offline image cache + lightbox extraction.*
 *See [REFLECTION.md](REFLECTION.md) for personal lessons and growth notes.*

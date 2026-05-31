@@ -326,6 +326,42 @@ The fix is one line per image creation site. The lesson: any `<img>` element tha
 
 ---
 
+### Bug 12: JP nationless cards invisible to nation filter ✅ Fixed
+
+**What happened:** In JP region Browse, filtering by **"-"** (nationless) returned no cards even though 1831+ JP cards have no nation. Nationless EN cards (Cray Elemental / Order) were also invisible to the filter.
+
+**Root cause:** The JP scraper stored nationless cards with `nations: ["‐"]` (U+2010 Unicode hyphen — visually identical to `-` but a different codepoint). The filter compared against `"-"` (ASCII U+002D). The comparison never matched, so:
+- Cards with `nations: ["‐"]` passed the `nation !== "all"` check (treated as having a nation)
+- The `"-"` sentinel was never generated for the dropdown because no card had `nations: []` after the scraper ran
+
+**The fix:** A Unicode-dash regex `/^[\-‐–—−]+$/` strips all dash variants before nation filtering. Any card where all nation entries are dash-only is treated as `nations: []`. A `"-"` sentinel is injected into the dropdown when any such card exists. Applied in `filters.ts`, `collection-tab.ts`, and `wishlist-tab.ts`.
+
+**Root fix:** `fix_data.js` Fix 4 patched the one card whose data had the wrong value (`nations: ["‐"]` → `nations: []`), and the scraper was updated to skip Unicode-dash variants going forward.
+
+**Lesson:** Unicode look-alike characters are a silent data quality problem. `"‐"` and `"-"` are visually identical in most editors. Never compare scraped string data with hardcoded literals without normalizing first — or use regex that covers the Unicode equivalents.
+
+---
+
+### Bug 13: Region button label wrong in BOTH mode ✅ Fixed
+
+**What happened:** In BOTH mode, the `#regionBtn` label showed **"JP ▾"** instead of **"Both"**. Clicking it opened a context menu with "View EN / View JP" — but the user expected "Change Region" (the full dialog). Meanwhile there was no separate button for switching the active region (EN↔JP) within BOTH mode.
+
+**Root cause:** `updateRegionButton()` reused the same single button for two semantically different actions — "change the overall region preference" and "switch which region is currently viewed." The logic was:
+```typescript
+// BUG: BOTH mode showed "JP ▾" because activeRegion was JP at the time
+regionBtn.textContent = `${activeRegion} ▾`;
+```
+
+**The fix:** Added a second `#regionSwitchBtn` element to the header. In BOTH mode:
+- `#regionBtn` always shows **"Both"** → opens Change Region dialog (the full onboarding-style flow)
+- `#regionSwitchBtn` shows **"EN ▾"** or **"JP ▾"** → opens a context menu for switching EN↔JP
+
+In single-region mode, `#regionSwitchBtn` is hidden.
+
+**Lesson:** A single button that does different things depending on mode is error-prone. Two buttons with clear, stable labels is more readable and less bug-prone.
+
+---
+
 ### Bug 11: Grouped view re-rendered full DOM on every filter keystroke ✅ Fixed
 
 **What happened:** In "Grouped" view, typing in the collection search box triggered `applyFilters()` → `updateView()` → `renderGroupedView()` → `container.innerHTML = ""` + full rebuild on every keystroke, even when the filter result didn't change the entries.
@@ -338,23 +374,81 @@ The fix is one line per image creation site. The lesson: any `<img>` element tha
 
 ---
 
-### Bug 12: Browse location dropdown reset to first location when switching cards ✅ Fixed
+### Race condition caught in review: duplicate image downloads (never shipped) ✅ Fixed
 
-**What happened:** In the Browse tab, if a user selected location B from the "Add to Collection" dropdown and added a card, then opened a different card, the dropdown defaulted back to location A (the first option in the list) instead of B.
+**What was caught:** In the initial draft of `image-cache.ts`, `_downloadBackground` only checked `memCache.has(cardNo)` before starting a download. If the user opened the same card preview twice in rapid succession (both calls reach the "not cached" branch before either download completes), two parallel fetches for the same image would start — duplicating the HTTP request and the disk write.
 
-**Root cause:** `_buildCollectionSection()` in `CardPreview` builds the `<select>` element fresh on every card open, with no memory of the previous selection. The first `<option>` in the list is always selected by default.
+**Root cause:** The guard only checked the result state (memCache), not the in-flight state (pending download).
 
-**The fix:** Added `private _lastLocation: string = ""` as an instance variable on `CardPreview`. On successful add, `this._lastLocation = loc` is saved. On rebuild, if `_lastLocation` exists in the current locations list, it is pre-set as the select value.
+**The fix:** Added `pendingDownloads: Set<string>` alongside `memCache`. `_downloadBackground` returns early if `pendingDownloads.has(cardNo)`. The set is cleared in a `.finally()` block so failures don't permanently block future retries.
 
-```typescript
-if (this._lastLocation && locations.includes(this._lastLocation)) {
-  locSelect.value = this._lastLocation;
-}
-// ...inside add handler:
-this._lastLocation = loc;
-```
+**Lesson:** Any "check then act" pattern where the check and the act are not atomic needs an in-flight guard. Async operations in particular: the result cache and the pending-work cache are two different things.
 
-**Lesson:** Any form that the user fills out repeatedly in a session should remember its last state. The fix is always the same pattern: lift the value to a scope that outlives the form's rebuild cycle. In a class, that means an instance variable; in a module, a module-level variable.
+---
+
+### Bug 12: JS `fetch()` blocked by CORS when downloading card images ✅ Fixed
+
+**What happened:** The first implementation of `_downloadBackground` in `image-cache.ts` used `fetch(cdnUrl)` to download card images. Every download attempt failed with `TypeError: Failed to fetch`.
+
+**Root cause:** CDN image servers (en.cf-vanguard.com, cf-vanguard.com) serve images only for `<img src>` usage and do not include `Access-Control-Allow-Origin` response headers. `<img src>` requests are "no-cors" — the browser renders bytes without exposing them to JS. Programmatic `fetch()` calls enforce CORS and block the response when that header is absent.
+
+**The fix:** Moved the HTTP download to Rust using `reqwest`. Rust is not a browser — it has no CORS concept and just makes an HTTP request like any native client.
+
+**Lesson:** CORS is a browser-enforced policy applied to `fetch()` and `XHR` — NOT to `<img>`, `<video>`, or CSS `url()`. If a CDN works in an `<img>` tag but fails with `fetch()`, CORS is the first thing to check. Moving network I/O to the Rust side fully bypasses it.
+
+---
+
+### Bug 13: CDN returns fake 404 to non-browser User-Agents ✅ Fixed
+
+**What happened:** After moving the download to Rust, the CDN started returning HTTP 404 for valid image URLs. Direct PowerShell test with `Invoke-WebRequest` confirmed the same URL returned 200. Rust reqwest with default User-Agent got 404.
+
+**Root cause:** CDN uses fake HTTP 404 (not 403) as hotlink/bot protection. Requests without a browser-like `User-Agent` header are silently rejected as if the resource doesn't exist. The deception is intentional — a 403 would signal "blocked," a 404 doesn't reveal the protection exists.
+
+**The fix:** Added a Chrome User-Agent header to the reqwest client. 404s disappeared.
+
+**Distinguishing from genuine 404:** Some old Vanguard sets (original BT01, DZ-BT series) genuinely have no CDN images. These return 404 even with the correct User-Agent. The `memCache` null sentinel (`Map<string, string | null>`) handles this: 4xx → cache `null` → all future previews of that card skip the network entirely this session.
+
+**Lesson:** A 404 from a CDN is not necessarily "file not found." CDN operators use fake 404 (rather than 403) to avoid revealing they have bot protection. Always verify a 404 with an independent HTTP client that sends browser headers before concluding the resource doesn't exist.
+
+---
+
+### Bug 14: Lightbox missing in Collection and Wishlist preview panes ✅ Fixed
+
+**What happened:** Phase 9 added card images to Collection and Wishlist preview panes. Users clicking the image expected zoom (lightbox) — nothing happened. Browse tab had lightbox; the other two didn't.
+
+**Root cause:** The lightbox was implemented as private methods inside `CardPreview` class (Browse tab only). When Phase 9 added `<img>` elements to Collection/Wishlist previews, no one wired up the click handler — there was no shared lightbox to call.
+
+**The fix:** Extracted `lightbox.ts` — a module-level singleton with three exports (`showLightbox`, `hideLightbox`, `isLightboxOpen`). All three tabs import and call `showLightbox()` on image click. `CardPreview` delegates to the same functions. `main.ts` registers lightbox as the first `BackPane` so Android back button closes it from any tab.
+
+**Lesson:** When a UI element needs to be triggered by multiple independent modules, it belongs in its own module as a singleton — not inside one caller's class. The moment a second caller needs it, it's already time to extract.
+
+---
+
+### Design decision: base64 text storage vs binary + asset protocol
+
+When implementing offline image cache, there were two realistic options:
+
+**Option A — binary file + `convertFileSrc` (Tauri asset protocol)**
+- Write raw image bytes to disk, serve via `asset://localhost/path` URL
+- Requires enabling `core:asset:scope` in Tauri capabilities with an explicit path allowlist
+
+**Option B — base64 text via existing `write_text_file` / `read_text_file`**
+- ~33% larger on disk (base64 overhead)
+- Zero new Rust code, zero new capability config
+
+Chose Option B. The storage overhead (10–40 MB for a typical collection) is acceptable, and avoiding new capability config removes a class of subtle breakage — Tauri capability identifiers can change between versions.
+
+**Lesson:** Reusing existing infrastructure (even at a storage cost) reduces the surface area that can break. Premature optimization of storage format is not worth the configuration complexity.
+
+### Bug 15: Browse location dropdown reset to first location when switching cards ✅ Fixed
+
+**What happened:** In the Browse tab, selecting location B and adding a card, then opening a different card, the dropdown defaulted back to location A instead of B.
+
+**Root cause:** `_buildCollectionSection()` builds the `<select>` fresh on every card open with no memory of the previous selection.
+
+**The fix:** Added `private _lastLocation: string = ""` instance variable on `CardPreview`. Saved on add (`this._lastLocation = loc`), pre-selected on rebuild if present in current locations list.
+
+**Lesson:** Any form filled repeatedly in a session should remember its last state. Lift the value to a scope that outlives the form's rebuild cycle — in a class, an instance variable.
 
 ---
 

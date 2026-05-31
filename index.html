@@ -17,6 +17,8 @@
       <!-- Desktop: full app name -->
       <h1 class="header-app-title">Cardfight!! Vanguard Collection Manager</h1>
       <span id="updateSpinner" class="update-spinner" hidden>↻ Checking for updates…</span>
+      <button id="regionBtn" type="button" class="region-btn" title="Change region" aria-label="Change region">—</button>
+      <button id="regionSwitchBtn" type="button" class="region-btn" title="Switch active region" aria-label="Switch active region" hidden>—</button>
       <button id="themeToggleBtn" type="button" class="theme-toggle-btn" title="Toggle dark/light mode" aria-label="Toggle dark/light mode">☀︎</button>
       <button id="aboutBtn" type="button" class="about-btn" title="About" aria-label="About">?</button>
     </header>
@@ -46,7 +48,7 @@
           <select id="collectionSort" class="filter-select">
             <option value="loc-code">Location A–Z</option>
             <option value="name">Name A–Z</option>
-            <option value="code">Code A–Z</option>
+            <option value="code" selected>Code A–Z</option>
             <option value="qty-desc">Qty (most first)</option>
             <option value="id-desc">Date added (newest)</option>
           </select>
@@ -90,7 +92,7 @@
         <div class="toolbar-row toolbar-filters">
           <select id="wishlistSort" class="filter-select">
             <option value="name">Name A–Z</option>
-            <option value="code">Code A–Z</option>
+            <option value="code" selected>Code A–Z</option>
             <option value="nation">Nation A–Z</option>
           </select>
           <select id="wishlistNationFilter" class="filter-select">
@@ -119,6 +121,7 @@
       <div class="actions">
         <button id="refreshBtn" type="button" class="btn-secondary">Force Refresh</button>
         <button id="clearBtn" type="button" class="btn-danger">Clear Cache</button>
+        <button id="clearImageCacheBtn" type="button" class="btn-secondary">Image Cache ▾</button>
       </div>
 
       <div id="status" class="status status-info"></div>
@@ -142,7 +145,7 @@
             <select id="triggerFilter"><option value="all">All triggers</option></select>
             <select id="browseSort" class="filter-select">
               <option value="name">Name A–Z</option>
-              <option value="code">Code A–Z</option>
+              <option value="code" selected>Code A–Z</option>
               <option value="grade-asc">Grade 0→4</option>
               <option value="grade-desc">Grade 4→0</option>
               <option value="owned-desc">Owned (most)</option>

@@ -5,6 +5,12 @@ export interface BackPane {
   close(): void;
 }
 
+let _onboardingMode = false;
+
+export function setOnboardingMode(active: boolean): void {
+  _onboardingMode = active;
+}
+
 export function initBackButton(panes: BackPane[]): void {
   window.history.pushState({ tag: "app" }, "");
 
@@ -12,6 +18,12 @@ export function initBackButton(panes: BackPane[]): void {
   let exitTimer: ReturnType<typeof setTimeout> | null = null;
 
   window.addEventListener("popstate", () => {
+    if (_onboardingMode) {
+      showToast("Please select a region to continue.");
+      window.history.pushState({ tag: "app" }, "");
+      return;
+    }
+
     for (const pane of panes) {
       if (pane.isOpen()) {
         pane.close();

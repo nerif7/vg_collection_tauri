@@ -30,7 +30,7 @@ A **Cardfight!! Vanguard** card database browser and personal collection tracker
 
 ```
 src/
-├── main.ts               # App orchestration, tab routing, global state (Browse tab)
+├── main.ts               # App orchestration, tab routing, global card state + region logic
 ├── cache.ts              # File-based card DB cache + GitHub fetch helpers (fetchFromGitHub, fetchLatestCommitSha, loadFromCache)
 ├── collection-db.ts      # JSON file CRUD for collection + wishlist + locations (generic loadJsonFile<T>/saveJsonFile<T>)
 ├── filters.ts            # Pure filter logic — no DOM, no side effects, testable
@@ -44,6 +44,7 @@ src/
 ├── collection-grouped.ts # Grouped view renderer (collapsible location groups)
 ├── card-preview.ts       # Preview pane + lightbox (Browse tab)
 ├── tab-nav.ts            # Tab navigation wiring
+├── browse-tab.ts         # Browse tab — virtual list/grid, filters, preview pane, availability guard
 ├── collection-tab.ts     # Collection tab — list/grid/grouped + edit controls
 ├── collection-edit.ts    # Edit section DOM builder (qty/move/remove controls + callbacks)
 ├── wishlist-tab.ts       # Wishlist tab view
@@ -55,10 +56,13 @@ src/
 ├── stats-collapsible.ts  # Shared collapsible stats widget (used by Collection + Wishlist tabs)
 ├── browse-stats.ts       # Browse tab UI helpers — setStatus, renderStats, renderCacheInfo, showUpdateSpinner
 ├── theme.ts              # Dark/light mode toggle (localStorage persistence)
-├── back-button.ts        # Android back button handler — close previews, double-back exit (BackPane interface)
+├── back-button.ts        # Android back button handler — close previews, double-back exit (BackPane interface); setOnboardingMode() blocks back during region onboarding
 ├── context-menu.ts       # Generic floating context menu (long-press / right-click on collection rows)
 ├── focus-trap.ts         # Modal focus trap — Tab cycles within dialog, auto-focuses first element
 ├── swipe-dismiss.ts      # Swipe-to-dismiss utility for bottom sheet (mobile)
+├── image-cache.ts        # Offline image cache — getImageSrc (lazy download + base64 storage), clearAllImageCache, clearOrphanedImageCache
+├── settings.ts           # Load/save region preference + active region to userdata/settings.json
+├── onboarding.ts         # First-launch region selection dialog
 ├── types.ts              # All TypeScript interfaces and types
 └── styles.css            # Tailwind CSS v4 — design tokens, responsive layout, dark mode
 
@@ -72,7 +76,10 @@ src-tauri/src/
 - **Vanilla TS over React/Vue** — keeps bundle tiny, no JS component framework; Tailwind CSS v4 is used for styling (CSS utility library, not a component framework)
 - **JSON files in `{exe-dir}/userdata/`** — portable storage; copy folder = copy data, delete folder = clean uninstall; custom Rust commands (`get_userdata_dir`, `read_text_file`, `write_text_file`) instead of `tauri-plugin-fs`
 - **Generic JSON I/O in `collection-db.ts`** — `loadJsonFile<T>(filename, label)` / `saveJsonFile<T>(filename, data)` handle error toasts, parse errors, and path construction once; per-entity functions are thin wrappers (3 lines each)
-- **GitHub fetch in `cache.ts`** — `fetchFromGitHub`, `fetchLatestCommitSha`, `loadFromCache` live alongside cache I/O because they form the complete "card data access layer" — load from disk or fetch from network
+- **GitHub fetch in `cache.ts`** — `fetchFromGitHub`, `fetchLatestCommitSha`, `loadFromCache` live alongside cache I/O because they form the complete "card data access layer" — load from disk or fetch from network; JP equivalents (`fetchFromGitHubJp`, etc.) follow the same pattern
+- **Unified `Card` shape via normalization** — `RawEnCard` and `RawJpCard` are the raw JSON shapes; `normalizeEn()`/`normalizeJp()` in `cache.ts` map them to `Card` with `cardNo`, `displayName`, `imageUrl`, `region`; the rest of the app never sees the raw types
+- **`region` field on collection/wishlist entries** — `CollectionEntry.region` and `WishlistEntry.region` let EN and JP data coexist in a single file; old entries without a region default to `"EN"` at load time
+- **Offline image cache in `image-cache.ts`** — base64 text storage via existing `write_text_file`/`read_text_file` commands; avoids Tauri asset protocol config; `getImageSrc(cardNo, cdnUrl)` returns cached data URL or CDN URL and triggers background download; `pendingDownloads` Set prevents duplicate concurrent fetches
 - **Pure filter module** — `filters.ts` has zero DOM dependencies; easy to test and reuse
 - **Generic `VirtualList<T>`** — parameterized by row height + render function; works with any data type
 - **Callbacks over imports for cross-tab notifications** — `initCollectionTab(cards, onChange?)` and `initBackButton(panes: BackPane[])` receive callbacks at init time, avoiding circular imports between tab modules and `main.ts`
@@ -140,29 +147,56 @@ The primary view is the user's **own collection** — not the card browser. Navi
 #### Data model
 
 ```typescript
+interface Card {
+  cardNo:      string;        // enCardNo for EN, jpCardNo for JP
+  displayName: string;        // name for EN, nameJp for JP
+  imageUrl:    string | null; // imageUrlEn for EN, imageUrlJp for JP
+  region:      "EN" | "JP";
+  // identical fields in both schemas:
+  setCode:    string;
+  cardNumber: string;
+  unitType:   string | null;  // Japanese string for JP cards (ノーマルユニット, etc.)
+  nations:    string[];
+  clan:       string[];
+  races:      string[];
+  grade:      number | null;
+  trigger:    string | null;
+  rarity:     string | null;
+}
+
 interface CollectionEntry {
   id?: number;       // autoIncrement PK (undefined when creating; assigned on save)
-  cardCode: string;  // matches Card.enCardNo
+  cardCode: string;  // matches Card.cardNo
   quantity: number;  // always >= 1
   location: string;  // free-form; empty string = "unspecified"
+  region:   "EN" | "JP";
 }
 
 interface WishlistEntry {
-  cardCode: string;  // primary key
+  cardCode: string;  // matches Card.cardNo
+  region:   "EN" | "JP";
+}
+
+interface Settings {
+  region_preference:  "EN" | "JP" | "BOTH";
+  last_active_region: "EN" | "JP";
+  migration_version:  number;
 }
 ```
 
 **Key design decisions:**
 - **Multiple entries per cardCode** — a card can have separate entries for different locations (e.g., 3× "Red Binder" + 2× "Storage Box A" = two separate `CollectionEntry` rows for the same cardCode).
-- **Duplicate guard:** if user adds a card with a `cardCode + location` combination that already exists, quantities are **merged** automatically (no new entry created).
+- **Duplicate guard:** if user adds a card with a `cardCode + location + region` combination that already exists, quantities are **merged** automatically (no new entry created).
 - **Wishlist is independent** — a card can be in both collection and wishlist simultaneously (e.g., owned 1 copy, still looking for more).
 - **Empty location is valid** — means "unspecified", stored as `""`.
 
 **File storage:**
-- `userdata/collection.json` — `CollectionEntry[]`; ID assigned via `Math.max(...ids) + 1`
-- `userdata/wishlist.json` — `WishlistEntry[]`
+- `userdata/collection.json` — `CollectionEntry[]` (EN + JP coexist; filtered by `region` at query time)
+- `userdata/wishlist.json` — `WishlistEntry[]` (same)
 - `userdata/locations.json` — `string[]`; seeded with `["my collection"]` on first run
+- `userdata/settings.json` — `Settings`; region preference + last active region
 - Neither collection nor wishlist is affected by Force Refresh or Clear Cache
+- Old entries without a `region` field are backward-compatible — loaded as `"EN"` automatically
 
 ---
 
@@ -174,7 +208,7 @@ interface WishlistEntry {
 - Wishlist card count
 - Location count (count of distinct non-empty location strings)
 
-**List:** Flat virtualized list using `VirtualList<CollectionEntry>` — one row per entry (not grouped by card). Default sort: **by location A–Z, then card code A–Z**. Each row shows:
+**List:** Flat virtualized list using `VirtualList<CollectionEntry>` — one row per entry (not grouped by card). Default sort: **Code A–Z**. Each row shows:
 - Card name (resolved from card DB) + card code
 - Quantity badge (e.g. `×3`)
 - Location text (or "—" if empty)
@@ -357,15 +391,39 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 
 - ✅ Fix: Browse "Add to Collection" location dropdown remembers last used location across cards (`_lastLocation` instance variable on `CardPreview`)
 
-### Phase 7+ — Future Features (no active plans)
+### Phase 8 — JP Integration ✅ Done (`feature/jp-integration`)
+
+- ✅ Unified `Card` shape — `normalizeEn()`/`normalizeJp()` in `cache.ts` map raw JSON to `cardNo`, `displayName`, `imageUrl`, `region`
+- ✅ JP cache: `loadCardsJp`, `saveCardsJp`, `fetchFromGitHubJp`, `fetchLatestCommitShaJp`, `loadFromCacheJp`
+- ✅ `CollectionEntry.region` + `WishlistEntry.region` — EN/JP coexist in one file; backward compat via `?? "EN"`
+- ✅ `Settings` persisted to `userdata/settings.json` — `region_preference` (EN/JP/BOTH) + `last_active_region`
+- ✅ Onboarding dialog on first launch — blocks back button until region chosen (`setOnboardingMode()`)
+- ✅ BOTH mode header: **"Both"** button → Change Region dialog; **"EN ▾"/"JP ▾"** button → context menu switcher
+- ✅ BOTH mode stats in Collection tab — EN Unique/Copies/Wishlist + JP Unique/Copies/Wishlist side-by-side
+- ✅ Stay on current tab when switching EN↔JP active region
+- ✅ Default sort: Code A–Z across all three tabs
+- ✅ `sortNations()` — priority order (Dragon Empire/ドラゴンエンパイア first), rest alphabetical
+- ✅ Nation filter nationless fix — Unicode-dash regex; `"-"` sentinel in dropdown for nationless cards
+- ✅ Data fix: `fix_data.js` Fix 4 + `cards_jp.json` DAIGO patch; JP scraper skips all Unicode-dash variants
+- ✅ Dead code removed: `overview-tab.ts` deleted; `setTabVisible()` removed from `tab-nav.ts`
+- ✅ Version bump: `0.2.0` → `0.3.0`
+- ✅ CSP updated: `https://cf-vanguard.com` added alongside `en.cf-vanguard.com` (JP card image CDN — confirmed via `cards_jp.json`)
+
+### Phase 9 — Offline Image Cache ✅ Done
+
+- ✅ `image-cache.ts` — `getImageSrc(cardNo, cdnUrl)`: mem cache → disk check → CDN fallback + background download
+- ✅ Images stored as base64 text in `userdata/images/{fileKey(cardNo)}` via existing `write_text_file` command
+- ✅ `pendingDownloads: Set<string>` guards against duplicate concurrent fetches for the same card
+- ✅ Chunked base64 encoding (8KB chunks) — faster than char-by-char on Android
+- ✅ Collection, Wishlist, Browse preview panes all use `getImageSrc`
+- ✅ "Image Cache ▾" button in Browse toolbar → context menu: **Clear all** / **Clear orphaned**
+- ✅ New Rust commands: `list_dir_files`, `delete_file`
+
+### Phase 10+ — Future Features (maybe, not in scope now)
 
 - **Deck Builder**: Vanguard deck validation (max 4 copies per card name, 50 cards total), deck export as text list
 - **Bulk edit**: Select multiple collection entries → change location or delete in bulk
 - **Stats breakdown**: Per-set, per-nation, per-rarity collection analytics
-
-### Current Status
-
-App is stable at v0.2.0. User is actively entering real collection data. No new feature development planned at this time.
 
 ---
 
@@ -373,10 +431,17 @@ App is stable at v0.2.0. User is actively entering real collection data. No new 
 
 ### Card Database
 
+**EN:**
 - **Source:** `https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/cards.json`
-- **Cache:** `userdata/cache/cards.json` — full `Card[]` array as JSON
+- **Cache:** `userdata/cache/cards.json` — normalized `Card[]` array as JSON
 - **Metadata:** `userdata/cache/cards-meta.json` — fetch timestamp, commit SHA, card count, file size
-- **Staleness threshold:** 7 days
+
+**JP:**
+- **Source:** `https://raw.githubusercontent.com/nerif7/vanguard-library-db/main/cards_jp.json`
+- **Cache:** `userdata/cache/cards_jp.json`
+- **Metadata:** `userdata/cache/cards_jp-meta.json`
+
+- **Staleness threshold:** 7 days (independent for EN and JP)
 
 ### Update Strategy (Hybrid) ✅ Implemented
 
@@ -391,11 +456,13 @@ Also provides a **manual "Force Refresh" button** for immediate re-fetch.
 
 ### Collection & Wishlist Data
 
-- `userdata/collection.json` — `CollectionEntry[]`; read-modify-write on every mutation
-- `userdata/wishlist.json` — `WishlistEntry[]`
+- `userdata/collection.json` — `CollectionEntry[]` (EN + JP entries coexist, filtered by `region`)
+- `userdata/wishlist.json` — `WishlistEntry[]` (same)
 - `userdata/locations.json` — `string[]`; seeded with `["my collection"]` on first run
-- Multiple entries per cardCode are allowed — each `cardCode + location` pair is a unique entry
+- `userdata/settings.json` — `Settings`; region preference + last active region
+- Multiple entries per cardCode are allowed — each `cardCode + location + region` combination is a unique entry
 - Must not be affected by card DB cache clears or Force Refresh
+- Backward compat: old entries without `region` field are treated as `"EN"` at load time
 
 ---
 
@@ -420,7 +487,7 @@ Measured on Windows 11, 24,262 cards / 10.09 MB:
 
 | Item | Location | Priority | Notes |
 |---|---|---|---|
-| Grouped view not virtualized | `collection-grouped.ts` | Medium | Full DOM re-render; may lag at 500+ entries |
+| Grouped view not virtualized | `collection-grouped.ts` | Medium | Full DOM re-render; may lag at 500+ entries. Fix order: (1) profile devtools dulu — kalau bottleneck di `appendChild` → DocumentFragment fix 5 menit; (2) kalau masih lambat → Opsi A: flatten ke `GroupItem = Header \| Row`, reuse `VirtualList<GroupItem>` dengan uniform height, ~3–4 jam; (3) Opsi B: variable-height VirtualList baru ~8–12 jam. Bukan default view, priority rendah sampai collection nyata >500 entries. |
 | No automated tests | `filters.ts` (best candidate) | Low | Pure module, zero DOM — easiest to test; no test runner set up yet |
 
 ---
@@ -469,4 +536,4 @@ NDK_HOME     = C:\Android\SDK\ndk\30.0.14904198
 | `@tailwindcss/vite` | Tailwind v4 Vite plugin |
 | `vite` | Frontend bundler and dev server |
 
-Card image CDN (`en.cf-vanguard.com`) and GitHub API are whitelisted in `tauri.conf.json` CSP.
+Card image CDNs (`en.cf-vanguard.com` for EN, `cf-vanguard.com` for JP) and GitHub API are whitelisted in `tauri.conf.json` CSP.

@@ -4,7 +4,9 @@ import {
   isInWishlist, addToWishlist, removeFromWishlist,
   getAllLocations,
 } from "./collection-db.ts";
+import { getImageSrc } from "./image-cache.ts";
 import { addSwipeToDismiss } from "./swipe-dismiss.ts";
+import { showLightbox, hideLightbox, isLightboxOpen } from "./lightbox.ts";
 
 export interface BrowsePreviewCallbacks {
   onCollectionChanged: () => void;
@@ -15,8 +17,6 @@ export interface BrowsePreviewCallbacks {
 export class CardPreview {
   private panel: HTMLElement;
   private body: HTMLElement;
-  private _lightbox: HTMLElement | null = null;
-  private _lightboxImg: HTMLImageElement | null = null;
   private callbacks: BrowsePreviewCallbacks | null = null;
   private _lastLocation: string = "";
 
@@ -49,11 +49,11 @@ export class CardPreview {
   }
 
   get isLightboxOpen(): boolean {
-    return this._lightbox?.classList.contains("is-open") ?? false;
+    return isLightboxOpen();
   }
 
   hideLightbox(): void {
-    this._hideLightbox();
+    hideLightbox();
   }
 
   private async _render(card: Card): Promise<void> {
@@ -62,15 +62,16 @@ export class CardPreview {
     // Image
     const imageWrap = document.createElement("div");
     imageWrap.className = "preview-image-wrap";
-    if (card.imageUrlEn) {
+    if (card.imageUrl) {
       const img = document.createElement("img");
-      img.src = card.imageUrlEn;
-      img.alt = card.name;
+      const src = await getImageSrc(card.cardNo, card.imageUrl) ?? card.imageUrl;
+      img.src = src;
+      img.alt = card.displayName;
       img.className = "preview-image";
       img.loading = "lazy";
       img.decoding = "async";
       img.title = "Click to enlarge";
-      img.addEventListener("click", () => this._showLightbox(card.imageUrlEn!, card.name));
+      img.addEventListener("click", () => showLightbox(src, card.displayName));
       imageWrap.appendChild(img);
     } else {
       const ph = document.createElement("div");
@@ -85,13 +86,13 @@ export class CardPreview {
 
     const nameEl = document.createElement("div");
     nameEl.className = "preview-name";
-    nameEl.textContent = card.name;
+    nameEl.textContent = card.displayName;
 
     const metaRow = document.createElement("div");
     metaRow.className = "preview-meta-row";
     const codeEl = document.createElement("span");
     codeEl.className = "preview-code";
-    codeEl.textContent = card.enCardNo;
+    codeEl.textContent = card.cardNo;
     const rarityEl = document.createElement("span");
     rarityEl.className = "preview-rarity";
     rarityEl.textContent = card.rarity ?? "—";
@@ -117,8 +118,8 @@ export class CardPreview {
 
   private async _buildCollectionSection(card: Card): Promise<HTMLElement> {
     const [existingEntries, inWishlist, locations] = await Promise.all([
-      getCollectionByCardCode(card.enCardNo),
-      isInWishlist(card.enCardNo),
+      getCollectionByCardCode(card.cardNo, card.region),
+      isInWishlist(card.cardNo, card.region),
       getAllLocations(),
     ]);
 
@@ -174,10 +175,10 @@ export class CardPreview {
           const qty = Math.max(1, parseInt(qtyInput.value, 10) || 1);
           const loc = locSelect.value;
           this._lastLocation = loc;
-          await mergeOrAdd(card.enCardNo, loc, qty);
+          await mergeOrAdd(card.cardNo, loc, qty, card.region);
           qtyInput.value = "1";
           this.callbacks?.onCollectionChanged();
-          const updated = await getCollectionByCardCode(card.enCardNo);
+          const updated = await getCollectionByCardCode(card.cardNo, card.region);
           renderOwned(updated);
         } finally {
           addBtn.disabled = false;
@@ -237,9 +238,9 @@ export class CardPreview {
     let wishlisted = inWishlist;
     wishlistBtn.addEventListener("click", async () => {
       if (wishlisted) {
-        await removeFromWishlist(card.enCardNo);
+        await removeFromWishlist(card.cardNo, card.region);
       } else {
-        await addToWishlist(card.enCardNo);
+        await addToWishlist(card.cardNo, card.region);
       }
       wishlisted = !wishlisted;
       setWishlistState(wishlisted);
@@ -248,35 +249,6 @@ export class CardPreview {
 
     wrapper.append(addForm, ownedSection, wishlistBtn);
     return wrapper;
-  }
-
-  private _showLightbox(src: string, alt: string): void {
-    if (!this._lightbox) {
-      this._lightbox = document.createElement("div");
-      this._lightbox.className = "lightbox";
-      this._lightbox.addEventListener("click", (e) => {
-        if (e.target === this._lightbox) this._hideLightbox();
-      });
-
-      this._lightboxImg = document.createElement("img");
-      this._lightboxImg.className = "lightbox-img";
-      this._lightbox.appendChild(this._lightboxImg);
-      document.body.appendChild(this._lightbox);
-
-      document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape") this._hideLightbox();
-      });
-
-      addSwipeToDismiss(this._lightbox, this._lightbox, () => this._hideLightbox());
-    }
-
-    this._lightboxImg!.src = src;
-    this._lightboxImg!.alt = alt;
-    requestAnimationFrame(() => { this._lightbox!.classList.add("is-open"); });
-  }
-
-  private _hideLightbox(): void {
-    this._lightbox?.classList.remove("is-open");
   }
 
   private _appendTag(

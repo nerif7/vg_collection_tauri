@@ -12,10 +12,10 @@ export function buildCardTile(
   const imgWrap = document.createElement("div");
   imgWrap.className = "card-tile-img-wrap";
 
-  if (card?.imageUrlEn) {
+  if (card?.imageUrl) {
     const img = document.createElement("img");
-    img.src       = card.imageUrlEn;
-    img.alt       = card.name;
+    img.src       = card.imageUrl;
+    img.alt       = card.displayName;
     img.loading   = "lazy";
     img.decoding  = "async";
     img.className = "card-tile-img";
@@ -40,11 +40,11 @@ export function buildCardTile(
 
   const nameEl = document.createElement("div");
   nameEl.className  = "card-tile-name";
-  nameEl.textContent = card?.name ?? "Unknown";
+  nameEl.textContent = card?.displayName ?? "Unknown";
 
   const codeEl = document.createElement("div");
   codeEl.className  = "card-tile-code";
-  codeEl.textContent = card?.enCardNo ?? "—";
+  codeEl.textContent = card?.cardNo ?? "—";
 
   const metaEl = document.createElement("div");
   metaEl.className = "card-tile-meta";

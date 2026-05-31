@@ -84,8 +84,8 @@ function sortInGroup(entries: CollectionEntry[], cardMap: Map<string, Card>): Co
     const ga = cardMap.get(a.cardCode)?.grade ?? 99;
     const gb = cardMap.get(b.cardCode)?.grade ?? 99;
     if (ga !== gb) return ga - gb;
-    const na = cardMap.get(a.cardCode)?.name ?? a.cardCode;
-    const nb = cardMap.get(b.cardCode)?.name ?? b.cardCode;
+    const na = cardMap.get(a.cardCode)?.displayName ?? a.cardCode;
+    const nb = cardMap.get(b.cardCode)?.displayName ?? b.cardCode;
     return na.localeCompare(nb);
   });
 }

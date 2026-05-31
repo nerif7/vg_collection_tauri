@@ -3,7 +3,7 @@
  */
 
 import type { FilterState } from "./filters.ts";
-import { UNIT_TYPE_OPTIONS, TRIGGER_OPTIONS, INITIAL_FILTER_STATE } from "./filters.ts";
+import { INITIAL_FILTER_STATE } from "./filters.ts";
 
 export interface FilterBarRefs {
   search:   HTMLInputElement;
@@ -14,10 +14,6 @@ export interface FilterBarRefs {
   clearBtn: HTMLButtonElement;
 }
 
-/**
- * Get all filter bar DOM references.
- * Call setelah DOM ready.
- */
 export function getFilterBarRefs(): FilterBarRefs {
   return {
     search:   document.querySelector<HTMLInputElement>("#searchInput")!,
@@ -30,30 +26,41 @@ export function getFilterBarRefs(): FilterBarRefs {
 }
 
 /**
- * Populate dropdown options dengan unique values dari cards.
+ * Reset a select to its first option only (the "all" placeholder).
+ * Called before re-populating to avoid accumulating options on region switch.
+ */
+function resetSelect(el: HTMLSelectElement): void {
+  while (el.options.length > 1) el.remove(1);
+}
+
+/**
+ * Populate dropdown options with unique values extracted from cards.
+ * Clears existing options first — safe to call on every region switch.
  */
 export function populateDropdowns(
   refs: FilterBarRefs,
-  options: { setCodes: string[]; nations: string[] },
+  options: { setCodes: string[]; nations: string[]; unitTypes: string[]; triggers: string[] },
 ): void {
-  // Set codes
+  resetSelect(refs.setCode);
+  resetSelect(refs.nation);
+  resetSelect(refs.unitType);
+  resetSelect(refs.trigger);
+
   for (const code of options.setCodes) {
     refs.setCode.append(makeOption(code, code));
   }
 
-  // Nations
   for (const nation of options.nations) {
     refs.nation.append(makeOption(nation, nation));
   }
 
-  // UnitType (static enum)
-  for (const ut of UNIT_TYPE_OPTIONS) {
+  for (const ut of options.unitTypes) {
     refs.unitType.append(makeOption(ut, ut));
   }
 
-  // Trigger (static enum + special "No trigger" option)
+  // Special "No trigger" option first, then dynamic trigger values
   refs.trigger.append(makeOption("__none__", "— Tidak ada trigger"));
-  for (const t of TRIGGER_OPTIONS) {
+  for (const t of options.triggers) {
     refs.trigger.append(makeOption(t, t));
   }
 }
@@ -65,9 +72,6 @@ function makeOption(value: string, label: string): HTMLOptionElement {
   return opt;
 }
 
-/**
- * Read current state dari DOM controls.
- */
 export function readFilterState(refs: FilterBarRefs): FilterState {
   return {
     search:   refs.search.value,
@@ -78,9 +82,6 @@ export function readFilterState(refs: FilterBarRefs): FilterState {
   };
 }
 
-/**
- * Reset all filters ke initial state.
- */
 export function resetFilters(refs: FilterBarRefs): void {
   refs.search.value   = INITIAL_FILTER_STATE.search;
   refs.setCode.value  = INITIAL_FILTER_STATE.setCode;
@@ -89,27 +90,20 @@ export function resetFilters(refs: FilterBarRefs): void {
   refs.trigger.value  = INITIAL_FILTER_STATE.trigger;
 }
 
-/** Toggle has-active class on the mobile Filter button when any filter is active. */
 export function setFilterActiveIndicator(active: boolean): void {
   document.getElementById("filterExpandBtn")?.classList.toggle("has-active", active);
 }
 
-/**
- * Wire all filter controls to call onChange callback.
- * Search input gets debounced (200ms).
- */
 export function attachFilterListeners(
   refs: FilterBarRefs,
   onChange: () => void,
 ): void {
-  // Search input: debounced
   let searchTimer: ReturnType<typeof setTimeout> | null = null;
   refs.search.addEventListener("input", () => {
     if (searchTimer !== null) clearTimeout(searchTimer);
     searchTimer = setTimeout(onChange, 200);
   });
 
-  // Dropdowns: immediate
   refs.setCode.addEventListener("change",  onChange);
   refs.nation.addEventListener("change",   onChange);
   refs.unitType.addEventListener("change", onChange);
