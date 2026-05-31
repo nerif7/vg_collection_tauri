@@ -138,6 +138,46 @@ fn get_file_mtime(path: String) -> Result<u64, String> {
     Ok(ms)
 }
 
+#[tauri::command]
+async fn start_oauth_listener(app: tauri::AppHandle) -> Result<u16, String> {
+    use std::io::{Read, Write};
+    use std::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0").map_err(|e| e.to_string())?;
+    let port = listener.local_addr().map_err(|e| e.to_string())?.port();
+
+    std::thread::spawn(move || {
+        if let Ok((mut stream, _)) = listener.accept() {
+            let mut buf = [0u8; 4096];
+            let n = stream.read(&mut buf).unwrap_or(0);
+            let request = String::from_utf8_lossy(&buf[..n]);
+
+            // Extract path+query from "GET /callback?code=... HTTP/1.1"
+            let url = request
+                .lines()
+                .next()
+                .and_then(|line| line.split_whitespace().nth(1))
+                .map(|path| format!("http://127.0.0.1:{}{}", port, path))
+                .unwrap_or_default();
+
+            // Return a friendly page to the browser
+            let body = "<html><body style='font-family:sans-serif;text-align:center;padding:60px'>\
+                <h2>✅ Authentication successful</h2>\
+                <p>You can close this tab and return to the app.</p>\
+                </body></html>";
+            let response = format!(
+                "HTTP/1.1 200 OK\r\nContent-Type: text/html\r\nContent-Length: {}\r\n\r\n{}",
+                body.len(), body
+            );
+            let _ = stream.write_all(response.as_bytes());
+
+            let _ = tauri::Emitter::emit(&app, "oauth-callback", url);
+        }
+    });
+
+    Ok(port)
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -155,6 +195,7 @@ pub fn run() {
             list_dir_files,
             delete_file,
             get_file_mtime,
+            start_oauth_listener,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

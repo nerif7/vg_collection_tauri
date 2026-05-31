@@ -1,6 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { once } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
+
+// Tauri emits this event from the Rust loopback HTTP listener
+const OAUTH_CALLBACK_EVENT = "oauth-callback";
 
 const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string;
 export const WORKER_URL = import.meta.env.VITE_WORKER_URL as string;
@@ -63,9 +66,13 @@ export async function signInWithGoogle(): Promise<AuthSession> {
   const codeVerifier  = generateCodeVerifier();
   const codeChallenge = await generateCodeChallenge(codeVerifier);
 
+  // Start loopback HTTP listener — Rust returns the port it bound to
+  const port = await invoke<number>("start_oauth_listener");
+  const redirectUri = `http://127.0.0.1:${port}/callback`;
+
   const params = new URLSearchParams({
     client_id:             GOOGLE_CLIENT_ID,
-    redirect_uri:          "vgcollection://auth/callback",
+    redirect_uri:          redirectUri,
     response_type:         "code",
     scope:                 "openid email",
     code_challenge:        codeChallenge,
@@ -73,52 +80,40 @@ export async function signInWithGoogle(): Promise<AuthSession> {
     prompt:                "select_account",
   });
 
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth?${params}`;
-  await openUrl(authUrl);
+  await openUrl(`https://accounts.google.com/o/oauth2/v2/auth?${params}`);
 
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      unlisten();
-      reject(new Error("Login timeout — tidak ada callback dalam 5 menit"));
-    }, 5 * 60 * 1000);
+  // Wait for Rust to emit the callback URL (fires once browser hits 127.0.0.1:port)
+  const callbackUrl = await new Promise<string>((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error("Login timeout — tidak ada callback dalam 5 menit")), 5 * 60 * 1000);
 
-    let unlisten: () => void;
-
-    listen<string>("deep-link://new-url", async ({ payload: url }) => {
+    once<string>(OAUTH_CALLBACK_EVENT, ({ payload }) => {
       clearTimeout(timeout);
-      unlisten();
-
-      try {
-        const parsed = new URL(url);
-        const code   = parsed.searchParams.get("code");
-        if (!code) throw new Error("No authorization code in callback URL");
-
-        const res = await fetch(`${WORKER_URL}/auth/google`, {
-          method:  "POST",
-          headers: { "Content-Type": "application/json" },
-          body:    JSON.stringify({ code, codeVerifier }),
-        });
-
-        if (!res.ok) {
-          // Gap 2: detect 401 → session expired
-          throw new Error(`Worker auth failed: ${res.status}`);
-        }
-
-        const { token, email } = await res.json() as { token: string; email: string };
-
-        const session: AuthSession = {
-          token,
-          email,
-          expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
-        };
-
-        await saveSession(session);
-        resolve(session);
-      } catch (err) {
-        reject(err);
-      }
-    }).then((fn) => { unlisten = fn; });
+      resolve(payload);
+    });
   });
+
+  const parsed = new URL(callbackUrl);
+  const code   = parsed.searchParams.get("code");
+  if (!code) throw new Error("No authorization code in callback URL");
+
+  const res = await fetch(`${WORKER_URL}/auth/google`, {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ code, codeVerifier, redirectUri }),
+  });
+
+  if (!res.ok) throw new Error(`Worker auth failed: ${res.status}`);
+
+  const { token, email } = await res.json() as { token: string; email: string };
+
+  const session: AuthSession = {
+    token,
+    email,
+    expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000,
+  };
+
+  await saveSession(session);
+  return session;
 }
 
 export async function signOut(): Promise<void> {

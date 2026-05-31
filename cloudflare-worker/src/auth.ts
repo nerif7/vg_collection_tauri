@@ -1,10 +1,11 @@
 import { SignJWT, jwtVerify } from "jose";
-import type { Env, JwtPayload } from "./types.ts";
+import type { JwtPayload } from "./types.ts";
 
 export async function verifyGoogleToken(
   code: string,
   codeVerifier: string,
-  clientId: string
+  clientId: string,
+  redirectUri: string
 ): Promise<{ sub: string; email: string }> {
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
     method: "POST",
@@ -12,7 +13,7 @@ export async function verifyGoogleToken(
     body: new URLSearchParams({
       code,
       client_id:     clientId,
-      redirect_uri:  "vgcollection://auth/callback",
+      redirect_uri:  redirectUri,
       grant_type:    "authorization_code",
       code_verifier: codeVerifier,
     }),

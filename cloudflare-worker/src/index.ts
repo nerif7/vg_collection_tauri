@@ -9,17 +9,18 @@ const app = new Hono<{ Bindings: Env }>();
 app.use("*", cors({ origin: "*" }));
 
 app.post("/auth/google", async (c) => {
-  const body = await c.req.json<{ code: string; codeVerifier: string }>();
+  const body = await c.req.json<{ code: string; codeVerifier: string; redirectUri: string }>();
 
-  if (!body.code || !body.codeVerifier) {
-    return c.json({ error: "Missing code or codeVerifier" }, 400);
+  if (!body.code || !body.codeVerifier || !body.redirectUri) {
+    return c.json({ error: "Missing code, codeVerifier, or redirectUri" }, 400);
   }
 
   try {
     const { sub, email } = await verifyGoogleToken(
       body.code,
       body.codeVerifier,
-      c.env.GOOGLE_CLIENT_ID
+      c.env.GOOGLE_CLIENT_ID,
+      body.redirectUri
     );
 
     await upsertUser(c.env.DB, sub, email);
