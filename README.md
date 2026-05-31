@@ -132,7 +132,13 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Rust: `list_dir_files` + `delete_file` commands added to `lib.rs`
 - ✅ New module: `image-cache.ts` — `getImageSrc()`, `clearAllImageCache()`, `clearOrphanedImageCache()`
 
-**Phase 7+ — Future (📋 Maybe)**
+**Post-Phase 9 Fixes (✅ Done)**
+- ✅ Android release APK signing — keystore + `signingConfigs` in `build.gradle.kts`; `keystore.properties` git-ignored
+- ✅ Fix: `kotlin.incremental=false` in `gradle.properties` — Kotlin daemon cross-drive crash (project E:, cargo C:)
+- ✅ Fix: Import backup on Android failed with "INVALID URL PATH" — added `tauri-plugin-fs`; `import_backup` now uses `app.fs().read()` to handle Android content URIs
+- ✅ Fix: Browse "Add to Collection" location dropdown remembers last used location across cards
+
+**Phase 10+ — Future (📋 Maybe)**
 - 📋 Bulk edit: select multiple entries → change location or delete in bulk
 - 📋 Deck Builder: Vanguard deck validation + export
 - 📋 Stats breakdown: per-set, per-nation, per-rarity collection analytics

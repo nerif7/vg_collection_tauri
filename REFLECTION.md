@@ -452,6 +452,40 @@ Chose Option B. The storage overhead (10–40 MB for a typical collection) is ac
 
 ---
 
+### Bug 16: Import backup fails on Android with "INVALID URL PATH" ✅ Fixed
+
+**What happened:** Tapping Import on Android, selecting a JSON backup file, returned error "INVALID URL PATH" instead of importing.
+
+**Root cause:** On Android, the file picker dialog returns a **content URI** (`content://com.android.providers.downloads.documents/...`) instead of a regular file path. The `import_backup` Rust command called `path.into_path()` which fails for content URIs — they can't be converted to a `PathBuf`. The error from `into_path()` was propagated as-is to the frontend.
+
+**The fix:** Added `tauri-plugin-fs` dependency. Changed `import_backup` to use `app.fs().read(file_path)` directly (passing the `FilePath` from the dialog without calling `into_path()`). `tauri_plugin_fs::Fs::read()` handles both regular paths (desktop) and content URIs (Android) transparently.
+
+```rust
+// Before (desktop only):
+let p = path.into_path().map_err(|e| e.to_string())?;
+let content = std::fs::read_to_string(p).map_err(|e| e.to_string())?;
+
+// After (cross-platform):
+let bytes = app.fs().read(file_path).map_err(|e| e.to_string())?;
+let content = String::from_utf8(bytes).map_err(|e| e.to_string())?;
+```
+
+**Lesson:** On Android, file dialog results are content URIs, not file paths. Any Rust command that calls `into_path()` on a dialog result will silently fail on Android. The fix is `tauri-plugin-fs` which abstracts over both path types.
+
+---
+
+### Technical Note: Kotlin daemon cross-drive crash on Windows ✅ Fixed
+
+**What happened:** `npm run tauri android build` crashed with `IllegalArgumentException: this and base files have different roots` from the Kotlin incremental compiler daemon.
+
+**Root cause:** The project is on `E:\` while the Cargo registry (Tauri source files) is on `C:\`. The Kotlin incremental compiler tries to compute relative paths between source files and fails when they're on different Windows drive letters.
+
+**The fix:** Added `kotlin.incremental=false` to `src-tauri/gen/android/gradle.properties`. Disables incremental compilation — build is slower but doesn't crash.
+
+**Lesson:** Kotlin incremental compilation assumes all source files share the same root drive. On Windows, multi-drive setups (project on one drive, dependencies on another) require disabling it. This is a known Kotlin/Windows issue with no better workaround short of moving all files to the same drive.
+
+---
+
 ## Process Insights
 
 ### The multi-question approach before implementing

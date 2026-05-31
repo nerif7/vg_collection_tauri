@@ -419,11 +419,22 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 - ✅ "Image Cache ▾" button in Browse toolbar → context menu: **Clear all** / **Clear orphaned**
 - ✅ New Rust commands: `list_dir_files`, `delete_file`
 
+### Post-Phase 9 Fixes
+
+- ✅ Fix: Browse "Add to Collection" location dropdown remembers last used location across cards (`_lastLocation` on `CardPreview`)
+- ✅ Android release signing — keystore + `signingConfigs` in `build.gradle.kts`; `keystore.properties` git-ignored
+- ✅ Fix: `kotlin.incremental=false` in `gradle.properties` — cross-drive compile error (project on E:, cargo on C:)
+- ✅ Fix: `tauri-plugin-fs` added; `import_backup` uses `app.fs().read(file_path)` to handle Android content URIs (replaces `into_path()` which fails on `content://...`)
+
 ### Phase 10+ — Future Features (maybe, not in scope now)
 
 - **Deck Builder**: Vanguard deck validation (max 4 copies per card name, 50 cards total), deck export as text list
 - **Bulk edit**: Select multiple collection entries → change location or delete in bulk
 - **Stats breakdown**: Per-set, per-nation, per-rarity collection analytics
+
+### Current Status
+
+App is stable at v0.3.0. Android release APK signed and working. User is actively entering real collection data. No new feature development planned at this time.
 
 ---
 
@@ -532,6 +543,7 @@ NDK_HOME     = C:\Android\SDK\ndk\30.0.14904198
 | `@tauri-apps/cli@2` | Build toolchain |
 | `tauri-plugin-opener` | Open URLs in system browser (Rust side) |
 | `tauri-plugin-dialog` | Native file save/open dialogs (Rust side, used by export/import) |
+| `tauri-plugin-fs` | Android content URI file reading (import backup on Android) |
 | `tailwindcss@4` | Utility-first CSS framework (mobile-first responsive styling) |
 | `@tailwindcss/vite` | Tailwind v4 Vite plugin |
 | `vite` | Frontend bundler and dev server |

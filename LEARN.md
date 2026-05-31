@@ -1657,5 +1657,22 @@ All three tabs import from `lightbox.ts` and call `showLightbox()` directly on i
 
 ---
 
-*Last updated: Phase 9 offline image cache + lightbox extraction.*
+### 3.25 Android import: `tauri-plugin-fs` over `into_path()` for content URIs
+
+On Android, the file picker dialog (`blocking_pick_file`) returns `FilePath::Url(content_uri)` — a content URI like `content://com.android.providers.downloads.documents/...` — not a regular `FilePath::Path(PathBuf)`. The original code called `path.into_path()` which returns `Err(url)` for content URIs, and the error "INVALID URL PATH" was propagated to the frontend.
+
+**Fix:** Added `tauri-plugin-fs` and replaced `into_path()` + `std::fs::read` with `app.fs().read(file_path)`. The `Fs::read()` method accepts `P: Into<FilePath>` and handles both variants transparently — regular paths on desktop, content URIs on Android.
+
+```rust
+// One line replaces three, works on both platforms:
+let bytes = app.fs().read(file_path).map_err(|e| e.to_string())?;
+```
+
+**Why not call `into_path()` and branch on `Err`?** The `Err(url)` gives back a `url::Url` which doesn't implement `Into<FilePath>` directly. Passing the original `FilePath` to `app.fs().read()` avoids the type conversion entirely.
+
+**Trade-off:** `tauri-plugin-fs` is a new dependency. But `tauri-plugin-dialog` already depends on it internally, so binary size impact is minimal.
+
+---
+
+*Last updated: Post-Phase 9 — Android release signing + import content URI fix.*
 *See [REFLECTION.md](REFLECTION.md) for personal lessons and growth notes.*

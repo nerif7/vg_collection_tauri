@@ -1,4 +1,5 @@
 use tauri_plugin_dialog::DialogExt;
+use tauri_plugin_fs::FsExt as _;
 
 fn bytes_to_base64(bytes: &[u8]) -> String {
     const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
@@ -75,9 +76,9 @@ async fn import_backup(app: tauri::AppHandle) -> Result<Option<String>, String> 
         .add_filter("JSON Backup", &["json"])
         .blocking_pick_file();
 
-    let Some(path) = path else { return Ok(None) };
-    let p = path.into_path().map_err(|e| e.to_string())?;
-    let content = std::fs::read_to_string(p).map_err(|e| e.to_string())?;
+    let Some(file_path) = path else { return Ok(None) };
+    let bytes = app.fs().read(file_path).map_err(|e| e.to_string())?;
+    let content = String::from_utf8(bytes).map_err(|e| e.to_string())?;
     Ok(Some(content))
 }
 
@@ -131,6 +132,7 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .invoke_handler(tauri::generate_handler![
             get_userdata_dir,
             read_text_file,
