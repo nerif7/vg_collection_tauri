@@ -5,6 +5,7 @@ export async function verifyGoogleToken(
   code: string,
   codeVerifier: string,
   clientId: string,
+  clientSecret: string,
   redirectUri: string
 ): Promise<{ sub: string; email: string }> {
   const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
@@ -13,6 +14,7 @@ export async function verifyGoogleToken(
     body: new URLSearchParams({
       code,
       client_id:     clientId,
+      client_secret: clientSecret,
       redirect_uri:  redirectUri,
       grant_type:    "authorization_code",
       code_verifier: codeVerifier,

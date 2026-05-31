@@ -20,6 +20,7 @@ app.post("/auth/google", async (c) => {
       body.code,
       body.codeVerifier,
       c.env.GOOGLE_CLIENT_ID,
+      c.env.GOOGLE_CLIENT_SECRET,
       body.redirectUri
     );
 
@@ -29,8 +30,9 @@ app.post("/auth/google", async (c) => {
     // Return server timestamp so client can use it as lastSyncedAt (Gap 4 fix)
     return c.json({ token, email, serverTime: Date.now() });
   } catch (err) {
-    console.error("Auth error:", err);
-    return c.json({ error: "Authentication failed" }, 401);
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Auth error:", msg);
+    return c.json({ error: "Authentication failed", detail: msg }, 401);
   }
 });
 

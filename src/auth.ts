@@ -102,7 +102,10 @@ export async function signInWithGoogle(): Promise<AuthSession> {
     body:    JSON.stringify({ code, codeVerifier, redirectUri }),
   });
 
-  if (!res.ok) throw new Error(`Worker auth failed: ${res.status}`);
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({})) as { detail?: string };
+    throw new Error(`Worker auth failed: ${res.status} — ${body.detail ?? "unknown"}`);
+  }
 
   const { token, email } = await res.json() as { token: string; email: string };
 

@@ -6,3 +6,6 @@ WORKER_SECRET=your-random-secret-here
 
 # Google OAuth 2.0 Client ID
 GOOGLE_CLIENT_ID=YOUR_CLIENT_ID.apps.googleusercontent.com
+
+# Google OAuth 2.0 Client Secret (dari Google Cloud Console → Credentials → Desktop app)
+GOOGLE_CLIENT_SECRET=your_client_secret_here
