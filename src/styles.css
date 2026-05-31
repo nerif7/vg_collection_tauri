@@ -132,6 +132,60 @@
     .header-app-title    { display: block; }
   }
 
+  .sync-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+  }
+  .sync-btn--signed-in {
+    color: var(--green, #22c55e);
+    border-color: var(--green, #22c55e);
+  }
+  @media (hover: hover) {
+    .sync-btn:hover { background: var(--bg-muted); color: var(--text); }
+  }
+
+  .sync-menu {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px;
+    min-width: 220px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sync-menu-email {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    padding: 4px 10px 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2px;
+    word-break: break-all;
+  }
+  .sync-menu-item {
+    width: 100%;
+    text-align: left;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 0.88rem;
+    cursor: pointer;
+    background: none;
+    border: none;
+    color: var(--text);
+  }
+  @media (hover: hover) {
+    .sync-menu-item:hover { background: var(--bg-muted); }
+  }
+  .sync-menu-signout { color: var(--red) !important; }
+
   .about-btn {
     margin-left: auto;
     background: none;

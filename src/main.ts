@@ -39,6 +39,7 @@ import { loadSettings, saveSettings } from "./settings.ts";
 import { showOnboarding } from "./onboarding.ts";
 import { runSync, scheduleDebounce } from "./sync.ts";
 import { loadSession } from "./auth.ts";
+import { initSyncButton } from "./sync-menu.ts";
 import "./styles.css";
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -354,6 +355,10 @@ async function handleForceRefresh() {
   }
 }
 
+export function handleSyncOutcome(result: Awaited<ReturnType<typeof runSync>>): void {
+  void handleSyncResult(result);
+}
+
 async function handleSyncResult(result: Awaited<ReturnType<typeof runSync>>): Promise<void> {
   switch (result.status) {
     case "pulled":
@@ -536,6 +541,7 @@ async function init() {
   document.getElementById("aboutBtn")?.addEventListener("click", showAboutDialog);
 
   initThemeToggle();
+  initSyncButton();
   initBackButton([
     { isOpen: isLightboxOpen, close: hideLightbox },
     ...getBrowseBackPanes(),
