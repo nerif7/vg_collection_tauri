@@ -2,8 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
-const GOOGLE_CLIENT_ID = "67040759438-p4utnf2bdnucnc5p2t5asmd81q3o99j3.apps.googleusercontent.com";
-export const WORKER_URL = "https://vg-collection-sync.rahmanmarwan8.workers.dev";
+const GOOGLE_CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID as string;
+export const WORKER_URL = import.meta.env.VITE_WORKER_URL as string;
 
 export interface AuthSession {
   token:     string;
