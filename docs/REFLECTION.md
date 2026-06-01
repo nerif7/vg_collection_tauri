@@ -753,6 +753,16 @@ layout.
 
 ---
 
+### Splitting a module is only worth it when state is independent
+
+During the refactor, I tried to split `collection-tab.ts` (415 lines) into smaller pieces. Every attempt made things worse: the split created a `deps` parameter with 8+ fields — more lines than the file saves by splitting. The file stayed.
+
+The lesson: file length is a symptom, not the problem. The real question is whether the code has *independent concerns with independent state*. When 10 functions all share the same 8 mutable variables, those functions form one cohesive unit — artificially separating them just relocates the coupling into a parameter list.
+
+A good split has two properties: each piece has a clear name for what it does, and each piece could be tested in isolation without dragging in the other's state.
+
+---
+
 ## Growth as a Developer
 
 **Before this project, I:**
@@ -769,7 +779,7 @@ layout.
 - Use TypeScript generics naturally and understand when they add value
 - Understand the Tauri architecture (WebView + Rust process + IPC bridge) and how it
   differs from Electron (no bundled Chromium)
-- Have written ~2,500 lines of vanilla TypeScript without a framework and found it
+- Have written ~3,000 lines of vanilla TypeScript without a framework and found it
   readable and maintainable
 - Can build a full mobile-responsive layout with Tailwind CSS v4 — bottom nav, bottom
   sheet, safe area insets, dark mode — without any component framework
@@ -778,6 +788,8 @@ layout.
 - Know how Android system bars interact with WebView layout (viewport-fit, safe-area-inset)
 - Can intercept the Android back button via the History API (`pushState` / `popstate`)
   without any native plugin
+- Know how to split a large orchestrator module without circular dependencies — mutable
+  state object passed by reference; dynamic `import()` for the one unavoidable cycle
 
 **What I'm still learning:**
 - Rust — currently enough to understand Tauri's backend but not enough to write Rust

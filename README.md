@@ -157,6 +157,13 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Update check sequenced before login on Android — prevents 10MB card download racing with OAuth network calls
 - ✅ Auth retry with backoff — 3 attempts (0s → 2s → 6s) for Android WebView network cold start after OAuth
 
+**Post-Phase 10 Refactor (✅ Done)**
+- ✅ `main.ts` 624 → 223 lines — extracted 5 focused modules: `region.ts`, `card-loader.ts`, `sync-handlers.ts`, `startup.ts`, `collection-add-section.ts`
+- ✅ `card-preview.ts` 231 → 115 lines — `buildCollectionAddSection` extracted to `collection-add-section.ts`
+- ✅ Dead exports removed: `refreshWishlistTab`, `closeContextMenu`, `refreshSyncBtnState`, `computeDiff`, `handleFirstLoginSync`
+- ✅ Debug logs removed from `collection-tab.ts` + `wishlist-tab.ts`
+- ✅ Duplicate CSS rule removed (`styles.css`); "Gap X fix" code comments removed from Cloudflare Worker
+
 **Phase 10+ — Future (📋 Maybe)**
 - 📋 Bulk edit: select multiple entries → change location or delete in bulk
 - 📋 Deck Builder: Vanguard deck validation + export

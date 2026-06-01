@@ -1799,5 +1799,46 @@ No JS changes needed — pure CSS grid assigns image to column 1, all siblings t
 
 ---
 
-*Last updated: Post-Phase 9 — desktop preview → modal popup, 2-column layout, adaptive width.*
+---
+
+### 3.27 Splitting a 600-line orchestrator without circular dependencies
+
+`main.ts` reached 624 lines because it was the only module that knew about all shared state (`allCards`, `activeRegion`, `collectionQtyMap`, etc.). Splitting it naively creates circular imports: `startup.ts` needs to mutate state, but state lives in `main.ts`.
+
+**Solution: mutable state object pattern.**
+
+Declare one `AppState` object in `main.ts` and pass it by reference to extracted modules:
+
+```typescript
+// main.ts
+const state: AppState = { allEnCards: [], allCards: [], activeRegion: "EN", ... };
+await runStartup(state, callbacks);  // startup.ts mutates state directly
+```
+
+JS objects are passed by reference. When `startup.ts` does `state.allCards = [...newCards]`, `main.ts` sees the updated value — no return values, no setter functions, no event bus.
+
+Each extracted module declares its own minimal interface that matches the subset of `AppState` it needs. TypeScript structural typing (`{ allCards: Card[] }` is assignable to a type that requires `allCards: Card[]`) means the full `AppState` object satisfies any narrower interface automatically.
+
+**The one unavoidable circular dep: `sync-menu.ts` → `main.ts`.**
+
+`sync-menu.ts` calls `handleSyncOutcome` after Google Sign In completes. `handleSyncOutcome` lives in `main.ts` because it needs `syncDeps` which captures `state`. Making `sync-menu.ts` import `main.ts` statically would create a load-time circular dep (both modules import each other at the top level).
+
+Fix: dynamic import in `sync-menu.ts`:
+
+```typescript
+const { handleSyncOutcome } = await import("./main.ts");
+handleSyncOutcome(await runSync());
+```
+
+`await import()` defers the import until the function is called — by then both modules are fully initialized. Vite warns "module will not move into another chunk" but this is a chunking advisory, not a runtime error. The pattern is sound.
+
+**When to accept a large file instead of splitting.**
+
+`collection-tab.ts` was assessed at 415 lines and kept as-is. It has 10 functions that all share the same 8 module-level state variables (`allEntries`, `visibleEntries`, `cardMap`, `selectedId`, `virtualList`, `virtualGrid`, `viewMode`, `collapsedGroups`). Any split would require a `deps` object with 8+ fields — more boilerplate than the file's current length warrants. The file boundary stays; the functions stay cohesive.
+
+Rule of thumb: split when modules have *independent state*. Don't split when splitting just relocates shared mutable state into a larger parameter list.
+
+---
+
+*Last updated: Post-Phase 10 refactor — main.ts split, mutable state pattern, circular dep via dynamic import.*
 *See [REFLECTION.md](REFLECTION.md) for personal lessons and growth notes.*
