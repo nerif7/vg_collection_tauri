@@ -123,10 +123,8 @@ export async function loadWishlistTab(region?: "EN" | "JP", cards?: Card[]): Pro
 
   if (viewMode === "list") virtualList?.setSkeleton(6);
 
-  const t0 = performance.now();
   const rawEntries = await getAllWishlistEntries();
   allEntries = rawEntries.filter((e) => (e.region ?? "EN") === _currentRegion);
-  console.debug(`[perf] wishlist DB load: ${(performance.now() - t0).toFixed(1)} ms (${allEntries.length} entries)`);
 
   populateWishlistFilters();
   applyFilters();
@@ -284,10 +282,4 @@ async function renderPreview(entry: WishlistEntry): Promise<void> {
     _onChange?.();
   });
   previewBody.appendChild(removeBtn);
-}
-
-// ── Public refresh (called after wishlist changes from Browse tab) ─────────────
-
-export async function refreshWishlistTab(): Promise<void> {
-  await loadWishlistTab();
 }

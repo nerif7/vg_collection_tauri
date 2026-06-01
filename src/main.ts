@@ -1,25 +1,10 @@
-import type { Card, Settings } from "./types.ts";
-import {
-  saveCards, saveMeta, clearCards, clearMeta,
-  saveCardsJp, saveMetaJp, clearCardsJp, clearMetaJp,
-  fetchFromGitHub, fetchFromGitHubJp,
-  fetchLatestCommitSha, fetchLatestCommitShaJp,
-  fetchVersionInfo, loadFromCache, loadFromCacheJp,
-  type CacheMeta,
-} from "./cache.ts";
-import { getCollectionQtyMap, deduplicateCollection, getAllCollectionCardNos, clearAllCollectionEntries } from "./collection-db.ts";
+import { clearCards, clearMeta, clearCardsJp, clearMetaJp, loadFromCache } from "./cache.ts";
+import { getCollectionQtyMap, getAllCollectionCardNos, clearAllCollectionEntries } from "./collection-db.ts";
 import { TabNav } from "./tab-nav.ts";
+import { loadCollectionTab, closeCollectionPreview, scrollToEntry } from "./collection-tab.ts";
+import { loadWishlistTab, closeWishlistPreview } from "./wishlist-tab.ts";
 import {
-  initCollectionTab, loadCollectionTab,
-  closeCollectionPreview, scrollToEntry,
-} from "./collection-tab.ts";
-import {
-  initWishlistTab, loadWishlistTab,
-  closeWishlistPreview,
-} from "./wishlist-tab.ts";
-import {
-  initBrowseTab, loadBrowseTab, reloadBrowseTab,
-  refreshBrowseQtyMap, clearBrowseTab,
+  initBrowseTab, refreshBrowseQtyMap, clearBrowseTab,
   closeBrowsePreview, updateBrowseAvailability, getBrowseBackPanes,
 } from "./browse-tab.ts";
 import { clearAllImageCache, clearOrphanedImageCache } from "./image-cache.ts";
@@ -29,523 +14,80 @@ import { showContextMenu } from "./context-menu.ts";
 import { showAboutDialog } from "./about-dialog.ts";
 import { showToast } from "./toast.ts";
 import { initThemeToggle } from "./theme.ts";
-import { initBackButton, setOnboardingMode } from "./back-button.ts";
+import { initBackButton } from "./back-button.ts";
 import { isLightboxOpen, hideLightbox } from "./lightbox.ts";
-import {
-  setStartupProgress, setStatus, renderStats, clearStats,
-  renderCacheInfo, showUpdateSpinner,
-} from "./browse-stats.ts";
-import { loadSettings, saveSettings } from "./settings.ts";
-import { showOnboarding } from "./onboarding.ts";
-import { runSync, scheduleDebounce, resolveFirstLogin, resolveAndSync } from "./sync.ts";
-import { loadSession } from "./auth.ts";
-import { initSyncButton, updateSyncTimestamp, flashSyncResult } from "./sync-menu.ts";
+import { renderCacheInfo, setStatus, clearStats } from "./browse-stats.ts";
+import { runSync } from "./sync.ts";
+import { handleSyncResult, type SyncDeps } from "./sync-handlers.ts";
+import { switchRegion, openChangeRegionDialog, handleSwitchRegionClick } from "./region.ts";
+import { doFetchAndCacheEn, doFetchAndCacheJp } from "./card-loader.ts";
+import { runStartup, type AppState } from "./startup.ts";
 import "./styles.css";
 
 // ── State ─────────────────────────────────────────────────────────────────────
-let allEnCards:       Card[] = [];
-let allJpCards:       Card[] = [];
-let allCards:         Card[] = [];    // pointer: allEnCards or allJpCards
-let activeRegion:     "EN" | "JP" = "EN";
-let regionPreference: "EN" | "JP" | "BOTH" = "EN";
-let enMeta: CacheMeta | null = null;
-let jpMeta: CacheMeta | null = null;
-let collectionQtyMap = new Map<string, number>();
-let tabNav: TabNav | null = null;
+
+const state: AppState = {
+  allEnCards:       [],
+  allJpCards:       [],
+  allCards:         [],
+  activeRegion:     "EN",
+  regionPreference: "EN",
+  enMeta:           null,
+  jpMeta:           null,
+  collectionQtyMap: new Map(),
+};
 
 // ── DOM refs ──────────────────────────────────────────────────────────────────
-const refreshBtn        = document.querySelector<HTMLButtonElement>("#refreshBtn")!;
-const clearBtn          = document.querySelector<HTMLButtonElement>("#clearBtn")!;
+
+const refreshBtn         = document.querySelector<HTMLButtonElement>("#refreshBtn")!;
+const clearBtn           = document.querySelector<HTMLButtonElement>("#clearBtn")!;
 const clearImageCacheBtn = document.querySelector<HTMLButtonElement>("#clearImageCacheBtn")!;
 
-// ── Update check ──────────────────────────────────────────────────────────────
+let tabNav: TabNav | null = null;
 
-async function checkForUpdatesEn(meta: CacheMeta): Promise<void> {
-  showUpdateSpinner(true);
-  try {
-    const version = await fetchVersionInfo();
-    let needsUpdate: boolean;
-    if (version) {
-      needsUpdate = version.cardCount !== meta.cardCount;
-    } else {
-      const sha = await fetchLatestCommitSha();
-      needsUpdate = !!sha && sha !== meta.lastCommitSha;
-    }
-    if (!needsUpdate) return;
-    await doFetchAndCacheEn();
-    const setsMsg = version?.newSets.length ? ` — set baru: ${version.newSets.join(", ")}` : "";
-    showToast(`EN cards diperbarui${setsMsg} (${allEnCards.length.toLocaleString("id-ID")} kartu).`);
-  } finally {
-    showUpdateSpinner(false);
-  }
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+async function refreshCollectionOverlay(): Promise<void> {
+  state.collectionQtyMap = await getCollectionQtyMap(state.activeRegion);
+  refreshBrowseQtyMap(state.collectionQtyMap);
 }
 
-async function checkForUpdatesJp(meta: CacheMeta): Promise<void> {
-  showUpdateSpinner(true);
-  try {
-    const version = await fetchVersionInfo();
-    let needsUpdate: boolean;
-    if (version?.cardCountJp !== undefined) {
-      needsUpdate = version.cardCountJp !== meta.cardCount;
-    } else {
-      const sha = await fetchLatestCommitShaJp();
-      needsUpdate = !!sha && sha !== meta.lastCommitSha;
-    }
-    if (!needsUpdate) return;
-    await doFetchAndCacheJp();
-    const setsMsg = version?.newSetsJp?.length ? ` — set baru: ${version.newSetsJp.join(", ")}` : "";
-    showToast(`JP cards diperbarui${setsMsg} (${allJpCards.length.toLocaleString("id-ID")} kartu).`);
-  } finally {
-    showUpdateSpinner(false);
-  }
-}
-
-// ── Refresh collection overlay data ──────────────────────────────────────────
-
-async function refreshCollectionOverlay() {
-  collectionQtyMap = await getCollectionQtyMap(activeRegion);
-  refreshBrowseQtyMap(collectionQtyMap);
-}
-
-// ── Fetch and cache ───────────────────────────────────────────────────────────
-
-async function doFetchAndCacheEn(): Promise<void> {
-  if (activeRegion === "EN") setStatus("Fetching EN cards from GitHub…", "loading");
-  const result = await fetchFromGitHub();
-  allEnCards = result.cards;
-  if (activeRegion === "EN") allCards = allEnCards;
-  const sha = await fetchLatestCommitSha();
-
-  if (activeRegion === "EN") setStatus("Saving EN cards to cache…", "loading");
-  await saveCards(result.cards);
-  enMeta = {
-    lastFetchAt: Date.now(), lastCommitSha: sha,
-    cardCount: result.cards.length, sizeBytes: result.totalBytes,
-  };
-  await saveMeta(enMeta);
-
-  if (activeRegion === "EN") {
-    loadBrowseTab(allEnCards, collectionQtyMap);
-    setStatus(`✅ Fetched ${result.cards.length.toLocaleString("id-ID")} EN cards (${(result.fetchTimeMs + result.parseTimeMs).toFixed(0)} ms) + cached`, "success");
-    renderStats({ count: result.cards.length, sizeBytes: result.totalBytes, fetchTimeMs: result.fetchTimeMs, parseTimeMs: result.parseTimeMs });
-    renderCacheInfo(enMeta);
-  }
-}
-
-async function doFetchAndCacheJp(): Promise<void> {
-  if (activeRegion === "JP") setStatus("Fetching JP cards from GitHub…", "loading");
-  const result = await fetchFromGitHubJp();
-  allJpCards = result.cards;
-  if (activeRegion === "JP") allCards = allJpCards;
-  const sha = await fetchLatestCommitShaJp();
-
-  if (activeRegion === "JP") setStatus("Saving JP cards to cache…", "loading");
-  await saveCardsJp(result.cards);
-  jpMeta = {
-    lastFetchAt: Date.now(), lastCommitSha: sha,
-    cardCount: result.cards.length, sizeBytes: result.totalBytes,
-  };
-  await saveMetaJp(jpMeta);
-
-  if (activeRegion === "JP") {
-    loadBrowseTab(allJpCards, collectionQtyMap);
-    setStatus(`✅ Fetched ${result.cards.length.toLocaleString("id-ID")} JP cards (${(result.fetchTimeMs + result.parseTimeMs).toFixed(0)} ms) + cached`, "success");
-    renderStats({ count: result.cards.length, sizeBytes: result.totalBytes, fetchTimeMs: result.fetchTimeMs, parseTimeMs: result.parseTimeMs });
-    renderCacheInfo(jpMeta);
-  }
-}
-
-// ── Switch region (BOTH mode) ─────────────────────────────────────────────────
-
-async function switchRegion(region: "EN" | "JP"): Promise<void> {
-  if (activeRegion === region) return;
-  activeRegion = region;
-  allCards     = region === "JP" ? allJpCards : allEnCards;
-
-  await saveSettings({ region_preference: regionPreference, last_active_region: region, migration_version: 1 });
-
-  reloadBrowseTab(allCards, collectionQtyMap);
-
+async function reloadAllTabs(): Promise<void> {
   await Promise.all([
-    loadCollectionTab(region, allCards, regionPreference),
-    loadWishlistTab(region, allCards),
+    loadCollectionTab(state.activeRegion, undefined, state.regionPreference),
+    loadWishlistTab(state.activeRegion),
     refreshCollectionOverlay(),
   ]);
-
-  updateRegionButton();
 }
 
-// ── Region button ─────────────────────────────────────────────────────────────
-
-function updateRegionButton(): void {
-  const btn       = document.getElementById("regionBtn")       as HTMLButtonElement | null;
-  const switchBtn = document.getElementById("regionSwitchBtn") as HTMLButtonElement | null;
-  if (!btn) return;
-
-  if (regionPreference === "BOTH") {
-    btn.textContent    = "Both";
-    if (switchBtn) {
-      switchBtn.textContent = `${activeRegion} ▾`;
-      switchBtn.hidden = false;
-    }
-  } else {
-    btn.textContent = regionPreference;
-    if (switchBtn) switchBtn.hidden = true;
-  }
+function setControlsDisabled(disabled: boolean): void {
+  refreshBtn.disabled         = disabled;
+  clearBtn.disabled           = disabled;
+  clearImageCacheBtn.disabled = disabled;
 }
 
-function handleChangeRegion(): void {
-  openChangeRegionDialog().catch(() => {});
-}
+// ── Action handlers ───────────────────────────────────────────────────────────
 
-function handleSwitchRegion(e: MouseEvent): void {
-  const btn  = e.currentTarget as HTMLElement;
-  const rect = btn.getBoundingClientRect();
-  showContextMenu(rect.left, rect.bottom + 4, [
-    {
-      label: activeRegion === "EN" ? "✓ View EN" : "View EN",
-      action: () => { switchRegion("EN").catch(() => {}); },
-    },
-    {
-      label: activeRegion === "JP" ? "✓ View JP" : "View JP",
-      action: () => { switchRegion("JP").catch(() => {}); },
-    },
-  ]);
-}
-
-async function openChangeRegionDialog(): Promise<void> {
-  const chosen = await showOnboarding(regionPreference);
-  if (chosen === regionPreference) return;
-
-  const newSettings: Settings = {
-    region_preference:  chosen,
-    last_active_region: chosen === "BOTH" ? activeRegion : (chosen as "EN" | "JP"),
-    migration_version:  1,
-  };
-  await saveSettings(newSettings);
-  window.location.reload();
-}
-
-// ── Load handlers ─────────────────────────────────────────────────────────────
-
-// Yield to browser paint loop between heavy operations — critical on Android
-const yieldToUI = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
-
-async function handleLoad() {
-  const settings = await loadSettings();
-
-  if (!settings) {
-    setOnboardingMode(true);
-    document.getElementById("fouc-guard")?.remove();
-    const chosen = await showOnboarding();
-    setOnboardingMode(false);
-
-    const newSettings: Settings = {
-      region_preference:  chosen,
-      last_active_region: chosen === "BOTH" ? "EN" : (chosen as "EN" | "JP"),
-      migration_version:  1,
-    };
-    await saveSettings(newSettings);
-    regionPreference = chosen;
-    activeRegion     = newSettings.last_active_region;
-  } else {
-    regionPreference = settings.region_preference;
-    activeRegion     = settings.last_active_region;
-  }
-
-  updateRegionButton();
-
-  setStartupProgress(5);
+async function handleForceRefresh(): Promise<void> {
   setControlsDisabled(true);
-  setStatus("Loading…", "loading");
-  clearStats();
-
   try {
-    setStartupProgress(15);
-
-    // Collected update tasks — run after tabs load (Android: awaited before login; Desktop: background)
-    const pendingUpdateTasks: (() => Promise<void>)[] = [];
-
-    // ── Load EN ───────────────────────────────────────────────────────────
-    if (regionPreference === "EN" || regionPreference === "BOTH") {
-      const t0     = performance.now();
-      const cached = await loadFromCache();
-      const loadMs = performance.now() - t0;
-
-      if (cached) {
-        allEnCards = cached.cards;
-        enMeta     = cached.meta;
-        if (activeRegion === "EN") {
-          allCards = allEnCards;
-          setStartupProgress(50);
-          loadBrowseTab(allEnCards, collectionQtyMap);
-          setStartupProgress(70);
-          setStatus(`⚡ Loaded ${allEnCards.length.toLocaleString("id-ID")} EN cards from cache in ${loadMs.toFixed(0)} ms`, "success");
-          renderStats({ count: allEnCards.length, sizeBytes: enMeta.sizeBytes, loadFromCacheMs: loadMs });
-          renderCacheInfo(enMeta);
-        }
-        if (enMeta) pendingUpdateTasks.push(() => checkForUpdatesEn(enMeta!).catch(() => {}));
-      } else {
-        await doFetchAndCacheEn();
-        setStartupProgress(70);
-      }
-      await yieldToUI(); // breathe after heavy JSON parse
-    }
-
-    // ── Load JP ───────────────────────────────────────────────────────────
-    if (regionPreference === "JP" || regionPreference === "BOTH") {
-      const t0     = performance.now();
-      const cached = await loadFromCacheJp();
-      const loadMs = performance.now() - t0;
-
-      if (cached) {
-        allJpCards = cached.cards;
-        jpMeta     = cached.meta;
-        if (activeRegion === "JP") {
-          allCards = allJpCards;
-          setStartupProgress(50);
-          loadBrowseTab(allJpCards, collectionQtyMap);
-          setStartupProgress(70);
-          setStatus(`⚡ Loaded ${allJpCards.length.toLocaleString("id-ID")} JP cards from cache in ${loadMs.toFixed(0)} ms`, "success");
-          renderStats({ count: allJpCards.length, sizeBytes: jpMeta.sizeBytes, loadFromCacheMs: loadMs });
-          renderCacheInfo(jpMeta);
-        }
-        if (jpMeta) pendingUpdateTasks.push(() => checkForUpdatesJp(jpMeta!).catch(() => {}));
-      } else {
-        await doFetchAndCacheJp();
-        setStartupProgress(70);
-      }
-      await yieldToUI(); // breathe after heavy JSON parse
-    }
-
-    // Safety: ensure allCards pointer is set (BOTH mode edge cases)
-    if (allCards.length === 0) {
-      allCards = activeRegion === "JP" ? allJpCards : allEnCards;
-      if (allCards.length > 0) loadBrowseTab(allCards, collectionQtyMap);
-    }
-
-    initCollectionTab(allCards, regionPreference, () => {
-      refreshCollectionOverlay().catch(() => {});
-      scheduleDebounce();
-    });
-    initWishlistTab(allCards, () => { scheduleDebounce(); });
-    setStartupProgress(85);
-    await yieldToUI();
-
-    const mergedGroups = await deduplicateCollection();
-    if (mergedGroups > 0) showToast(`Cleaned up ${mergedGroups} duplicate collection ${mergedGroups === 1 ? "entry" : "entries"}.`);
-
-    // Sequential load — less peak load than Promise.all, better on Android
-    await loadCollectionTab(activeRegion, undefined, regionPreference);
-    await yieldToUI();
-    await loadWishlistTab(activeRegion);
-    await yieldToUI();
-    await refreshCollectionOverlay();
-    setStartupProgress(100);
-    await yieldToUI();
-
-    // On Android: run update checks first so login doesn't race with 10MB card download.
-    // On desktop: login available immediately, update runs in background.
-    const isAndroid = /Android/.test(navigator.userAgent);
-    if (isAndroid && pendingUpdateTasks.length > 0) {
-      const timeout = new Promise<void>((r) => setTimeout(r, 30_000));
-      await Promise.race([Promise.all(pendingUpdateTasks.map((t) => t())), timeout]);
-    } else {
-      void Promise.all(pendingUpdateTasks.map((t) => t()));
-    }
-
-    initSyncButton();
-    setTimeout(() => void runSync().then(handleSyncResult), 500);
-
+    if (state.activeRegion === "EN") await doFetchAndCacheEn(state);
+    else                              await doFetchAndCacheJp(state);
   } catch (err) {
-    setStartupProgress(100);
-    setStatus(`❌ Failed: ${err instanceof Error ? err.message : String(err)}`, "error", () => handleForceRefresh());
-    console.error(err);
-  } finally {
-    setControlsDisabled(false);
-    updateBrowseAvailability();
-    document.getElementById("fouc-guard")?.remove();
-  }
-}
-
-async function handleForceRefresh() {
-  setControlsDisabled(true);
-  clearStats();
-  try {
-    if (activeRegion === "EN") await doFetchAndCacheEn();
-    else                        await doFetchAndCacheJp();
-  } catch (err) {
-    setStatus(`❌ Refresh failed: ${err instanceof Error ? err.message : String(err)}`, "error", () => handleForceRefresh());
+    setStatus(`❌ Refresh failed: ${err instanceof Error ? err.message : String(err)}`, "error", handleForceRefresh);
   } finally {
     setControlsDisabled(false);
     updateBrowseAvailability();
   }
 }
 
-export function handleSyncOutcome(result: Awaited<ReturnType<typeof runSync>>): void {
-  void handleSyncResult(result);
-}
-
-async function handleSyncResult(result: Awaited<ReturnType<typeof runSync>>): Promise<void> {
-  switch (result.status) {
-    case "pulled":
-      showToast("Collection updated from cloud ✓", "success");
-      flashSyncResult("✓");
-      await Promise.all([
-        loadCollectionTab(activeRegion, undefined, regionPreference),
-        loadWishlistTab(activeRegion),
-        refreshCollectionOverlay(),
-      ]);
-      break;
-    case "pushed":
-      showToast("Synced to cloud ✓", "success");
-      updateSyncTimestamp();
-      flashSyncResult("✓");
-      break;
-    case "unauthorized":
-      showToast("Sync session expired — please sign in again", "error");
-      flashSyncResult("⚠");
-      break;
-    case "error":
-      showToast("Sync failed, working offline", "error");
-      flashSyncResult("⚠");
-      break;
-    case "first_login":
-      await handleFirstLoginSync(result.localCount, result.remoteCount, result.localCollection, result.remote, result.serverTime);
-      break;
-    case "conflict": {
-      const session = await loadSession();
-      if (!session) break;
-      const { showConflictDialog } = await import("./sync-dialog.ts");
-      const nameMap = new Map(allCards.map((c) => [c.cardNo, { displayName: c.displayName }]));
-      showConflictDialog(
-        result.conflicts,
-        nameMap,
-        async (choices) => {
-          try {
-            const localCollection = await (await import("./collection-db.ts")).getAllCollectionEntries();
-            const resolved = [...localCollection];
-            for (const conflict of result.conflicts) {
-              const key   = `${conflict.cardCode}|${conflict.region}`;
-              const choice = choices.get(key) ?? "local";
-              if (choice === "remote" && conflict.remote) {
-                const idx = resolved.findIndex(
-                  (e) => e.cardCode === conflict.cardCode &&
-                         e.location === conflict.remote!.location &&
-                         e.region   === conflict.region
-                );
-                if (idx !== -1) resolved[idx] = { ...resolved[idx], quantity: conflict.remote.quantity };
-              }
-            }
-            await resolveAndSync(session.token, resolved, result.remote);
-            showToast("Conflicts resolved ✓", "success");
-            flashSyncResult("✓");
-            await Promise.all([
-              loadCollectionTab(activeRegion, undefined, regionPreference),
-              loadWishlistTab(activeRegion),
-              refreshCollectionOverlay(),
-            ]);
-          } catch (err) {
-            showToast(`Sync failed: ${err instanceof Error ? err.message : String(err)}`, "error");
-          }
-        },
-        () => showToast("Sync cancelled — kept local data", "error")
-      );
-      break;
-    }
-    // "up_to_date", "not_logged_in" → silent
-  }
-}
-
-function _computeDiff(
-  local:   import("./types.ts").CollectionEntry[],
-  remote:  import("./types.ts").CollectionEntry[],
-  nameMap: Map<string, string>
-): import("./sync-dialog.ts").DiffSummary {
-  const localMap  = new Map<string, number>();
-  const remoteMap = new Map<string, number>();
-
-  for (const e of local) {
-    const k = `${e.cardCode}|${e.region}`;
-    localMap.set(k, (localMap.get(k) ?? 0) + e.quantity);
-  }
-  for (const e of remote) {
-    const k = `${e.cardCode}|${e.region}`;
-    remoteMap.set(k, (remoteMap.get(k) ?? 0) + (e.quantity || 1));
-  }
-
-  const onlyLocal: import("./sync-dialog.ts").DiffEntry[] = [];
-  const onlyCloud: import("./sync-dialog.ts").DiffEntry[] = [];
-  const diffQty:   import("./sync-dialog.ts").DiffEntry[] = [];
-
-  for (const [k, lQty] of localMap) {
-    const cardCode    = k.split("|")[0];
-    const rQty        = remoteMap.get(k) ?? 0;
-    const displayName = nameMap.get(cardCode) ?? cardCode;
-    if (rQty === 0)         onlyLocal.push({ cardCode, displayName, localQty: lQty, cloudQty: 0 });
-    else if (lQty !== rQty) diffQty.push({ cardCode, displayName, localQty: lQty, cloudQty: rQty });
-  }
-  for (const [k, rQty] of remoteMap) {
-    const cardCode = k.split("|")[0];
-    if (!localMap.has(k))
-      onlyCloud.push({ cardCode, displayName: nameMap.get(cardCode) ?? cardCode, localQty: 0, cloudQty: rQty });
-  }
-
-  return { onlyLocal, onlyCloud, diffQty };
-}
-
-async function handleFirstLoginSync(
-  localCount:      number,
-  remoteCount:     number,
-  localCollection: import("./types.ts").CollectionEntry[],
-  remote:          import("./types.ts").SyncPayload,
-  serverTime:      number
-): Promise<void> {
-  const { showFirstLoginSyncDialog } = await import("./sync-dialog.ts");
-  const session = await loadSession();
-  if (!session) return;
-
-  const nameMap = new Map(allCards.map((c) => [c.cardNo, c.displayName]));
-  const diff    = _computeDiff(localCollection, remote.collection as import("./types.ts").CollectionEntry[], nameMap);
-
-  showFirstLoginSyncDialog(localCount, remoteCount, diff,
-    async (choice) => {
-      try {
-        if (choice === "export_first") {
-          await exportBackup();
-          await resolveFirstLogin("use_cloud", remote, session.token, serverTime);
-          showToast("Backup disimpan, koleksi diganti dengan data cloud", "success");
-        } else if (choice === "use_cloud") {
-          await resolveFirstLogin("use_cloud", remote, session.token, serverTime);
-          showToast("Koleksi diperbarui dari cloud", "success");
-        } else if (choice === "merge") {
-          await resolveFirstLogin("merge", remote, session.token, serverTime);
-          showToast("Data lokal dan cloud digabungkan", "success");
-        } else if (choice === "keep_local") {
-          await resolveFirstLogin("keep_local", remote, session.token, serverTime);
-          showToast("Data lokal dikirim ke cloud", "success");
-        } else {
-          // "cancel" = tunda, simpan baseline tanpa sentuh data lokal maupun cloud
-          await resolveFirstLogin("cancel", remote, session.token, serverTime);
-        }
-        await Promise.all([
-          loadCollectionTab(activeRegion, undefined, regionPreference),
-          loadWishlistTab(activeRegion),
-          refreshCollectionOverlay(),
-        ]);
-      } catch (err) {
-        showToast(`Sync failed: ${err instanceof Error ? err.message : String(err)}`, "error");
-      }
-    }
-  );
-}
-
-async function handleClearCache() {
+async function handleClearCache(): Promise<void> {
   const ok = await showConfirm("Clear card cache? The local card database will be removed. You'll need an internet connection to reload.");
   if (!ok) return;
   try {
     await Promise.all([clearCards(), clearMeta(), clearCardsJp(), clearMetaJp()]);
-    allEnCards = []; allJpCards = []; allCards = []; enMeta = null; jpMeta = null;
+    state.allEnCards = []; state.allJpCards = []; state.allCards = [];
+    state.enMeta = null; state.jpMeta = null;
     clearBrowseTab();
     setStatus("🗑️ Cache cleared.", "info");
     clearStats();
@@ -553,12 +95,6 @@ async function handleClearCache() {
   } catch (err) {
     setStatus(`❌ Clear failed: ${err instanceof Error ? err.message : String(err)}`, "error");
   }
-}
-
-function setControlsDisabled(disabled: boolean) {
-  refreshBtn.disabled        = disabled;
-  clearBtn.disabled          = disabled;
-  clearImageCacheBtn.disabled = disabled;
 }
 
 function handleClearImageCache(e: MouseEvent): void {
@@ -591,9 +127,21 @@ function handleClearImageCache(e: MouseEvent): void {
   ]);
 }
 
+// ── Sync outcome (called by sync-menu.ts via dynamic import) ──────────────────
+
+export function handleSyncOutcome(result: Awaited<ReturnType<typeof runSync>>): void {
+  const syncDeps: SyncDeps = {
+    getAllCards:       () => state.allCards,
+    activeRegion:     () => state.activeRegion,
+    regionPreference: () => state.regionPreference,
+    reloadTabs:       reloadAllTabs,
+  };
+  void handleSyncResult(result, syncDeps);
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
 
-async function init() {
+async function init(): Promise<void> {
   window.addEventListener("unhandledrejection", (e) => {
     const msg = e.reason instanceof Error ? e.reason.message : String(e.reason);
     showToast(`❌ ${msg}`, "error");
@@ -601,8 +149,7 @@ async function init() {
   });
 
   tabNav = new TabNav();
-
-  tabNav.onTabSwitch((from, _to) => {
+  tabNav.onTabSwitch((from) => {
     if (from === "browse")     closeBrowsePreview();
     if (from === "collection") closeCollectionPreview();
     if (from === "wishlist")   closeWishlistPreview();
@@ -611,11 +158,9 @@ async function init() {
   initBrowseTab({
     onCollectionChanged: async () => {
       await refreshCollectionOverlay();
-      await loadCollectionTab(activeRegion, undefined, regionPreference);
+      await loadCollectionTab(state.activeRegion, undefined, state.regionPreference);
     },
-    onWishlistChanged: async () => {
-      await loadWishlistTab(activeRegion);
-    },
+    onWishlistChanged: async () => { await loadWishlistTab(state.activeRegion); },
     onEditInCollection: (entry) => {
       tabNav!.switchTo("collection");
       scrollToEntry(entry.id!);
@@ -630,8 +175,8 @@ async function init() {
 
   document.getElementById("importBtn")?.addEventListener("click", async () => {
     const cardSet = new Set([
-      ...allEnCards.map((c) => c.cardNo),
-      ...allJpCards.map((c) => c.cardNo),
+      ...state.allEnCards.map((c) => c.cardNo),
+      ...state.allJpCards.map((c) => c.cardNo),
     ]);
     const result = await importBackup(cardSet);
     if (result === "browser") {
@@ -639,10 +184,8 @@ async function init() {
     } else if (result === "invalid") {
       alert("Import failed: invalid or unrecognised backup file.");
     } else if (typeof result === "object") {
-      await Promise.all([loadCollectionTab(activeRegion, undefined, regionPreference), loadWishlistTab(activeRegion), refreshCollectionOverlay()]);
-      const unknownMsg = result.unknownCount > 0
-        ? ` (${result.unknownCount} unknown codes kept)`
-        : "";
+      await reloadAllTabs();
+      const unknownMsg = result.unknownCount > 0 ? ` (${result.unknownCount} unknown codes kept)` : "";
       showToast(
         `Imported ${(result as ImportResult).collectionCount} collection + ` +
         `${(result as ImportResult).wishlistCount} wishlist entries.${unknownMsg}`
@@ -651,38 +194,36 @@ async function init() {
   });
 
   document.getElementById("clearCollectionBtn")?.addEventListener("click", async () => {
-    const first = await showConfirm(
-      "Clear ALL collection entries?\n\nThis will permanently delete every card in your collection. This cannot be undone."
-    );
+    const first = await showConfirm("Clear ALL collection entries?\n\nThis will permanently delete every card in your collection. This cannot be undone.");
     if (!first) return;
-    const second = await showConfirm(
-      "Are you absolutely sure?\n\nAll collection data will be lost forever."
-    );
+    const second = await showConfirm("Are you absolutely sure?\n\nAll collection data will be lost forever.");
     if (!second) return;
     await clearAllCollectionEntries();
     await Promise.all([
-      loadCollectionTab(activeRegion, undefined, regionPreference),
+      loadCollectionTab(state.activeRegion, undefined, state.regionPreference),
       refreshCollectionOverlay(),
     ]);
     showToast("Collection cleared.");
   });
 
-  document.getElementById("regionBtn")?.addEventListener("click", handleChangeRegion);
-  document.getElementById("regionSwitchBtn")?.addEventListener("click", handleSwitchRegion);
+  document.getElementById("regionBtn")?.addEventListener("click", () =>
+    openChangeRegionDialog(state.regionPreference, state.activeRegion).catch(() => {}));
+  document.getElementById("regionSwitchBtn")?.addEventListener("click", (e) =>
+    handleSwitchRegionClick(e, () => state.activeRegion, (r) =>
+      switchRegion(r, state, refreshCollectionOverlay).catch(() => {})));
   document.getElementById("aboutBtn")?.addEventListener("click", showAboutDialog);
 
   initThemeToggle();
-  // initSyncButton is called in handleLoad() after startup completes
   initBackButton([
     { isOpen: isLightboxOpen, close: hideLightbox },
     ...getBrowseBackPanes(),
     {
       isOpen: () => document.getElementById("collectionPreviewPane")?.classList.contains("is-open") ?? false,
-      close:  () => closeCollectionPreview(),
+      close:  closeCollectionPreview,
     },
     {
       isOpen: () => document.getElementById("wishlistPreviewPane")?.classList.contains("is-open") ?? false,
-      close:  () => closeWishlistPreview(),
+      close:  closeWishlistPreview,
     },
   ]);
 
@@ -693,7 +234,19 @@ async function init() {
   const meta = await loadFromCache().then((c) => c?.meta ?? null);
   renderCacheInfo(meta);
 
-  await handleLoad();
+  const syncDeps: SyncDeps = {
+    getAllCards:       () => state.allCards,
+    activeRegion:     () => state.activeRegion,
+    regionPreference: () => state.regionPreference,
+    reloadTabs:       reloadAllTabs,
+  };
+
+  await runStartup(state, {
+    setControlsDisabled,
+    refreshCollectionOverlay,
+    onSyncResult: (r) => handleSyncResult(r, syncDeps),
+    onForceRefresh: () => void handleForceRefresh(),
+  });
 }
 
 init();

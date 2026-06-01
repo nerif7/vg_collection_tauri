@@ -30,7 +30,7 @@ export function initSyncButton(): void {
   void refreshSyncBtnState();
 }
 
-export async function refreshSyncBtnState(): Promise<void> {
+async function refreshSyncBtnState(): Promise<void> {
   const btn = document.getElementById("syncBtn") as HTMLButtonElement;
   const session = await loadSession();
   if (session) {
