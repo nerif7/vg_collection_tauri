@@ -8,7 +8,6 @@ export function updateSyncTimestamp(): void {
   if (btn) btn.title = `${btn.title.split(" — ")[0]} — synced just now`;
 }
 
-// Briefly flash an icon on the sync button to signal sync result
 export function flashSyncResult(icon: "✓" | "⚠"): void {
   const btn = document.getElementById("syncBtn") as HTMLButtonElement | null;
   if (!btn) return;
@@ -34,7 +33,6 @@ async function refreshSyncBtnState(): Promise<void> {
   const btn = document.getElementById("syncBtn") as HTMLButtonElement;
   const session = await loadSession();
   if (session) {
-    // Tampilkan nama (bagian sebelum @) di dalam tombol
     const shortName = session.email.split("@")[0];
     btn.innerHTML = `☁ <span class="sync-btn-label">${shortName}</span>`;
     btn.title = session.email;
@@ -49,7 +47,6 @@ async function refreshSyncBtnState(): Promise<void> {
 // ── Sync menu (dropdown-style dialog) ────────────────────────────────────────
 
 async function openSyncMenu(anchor: HTMLButtonElement): Promise<void> {
-  // Tutup menu yang sudah ada jika ada
   document.getElementById("sync-menu-backdrop")?.remove();
 
   const session = await loadSession();
@@ -67,7 +64,6 @@ async function openSyncMenu(anchor: HTMLButtonElement): Promise<void> {
   menu.setAttribute("aria-modal", "true");
   menu.setAttribute("aria-label", "Sync menu");
 
-  // Dropdown di bawah tombol, pastikan tidak keluar batas kanan layar
   const rect = anchor.getBoundingClientRect();
   const menuWidth = 240;
   const rightSpace = window.innerWidth - rect.right;

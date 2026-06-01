@@ -159,7 +159,6 @@ async fn start_oauth_listener(app: tauri::AppHandle) -> Result<u16, String> {
                 .map(|path| format!("http://127.0.0.1:{}{}", port, path))
                 .unwrap_or_default();
 
-            // Return a friendly page — prompts user to return to the app
             let body = "<html><body style='font-family:sans-serif;text-align:center;padding:60px'>\
                 <h2>✅ Authentication successful</h2>\
                 <p>Return to the <strong>VG Collection</strong> app to complete sign in.</p>\
