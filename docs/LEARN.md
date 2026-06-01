@@ -1840,5 +1840,31 @@ Rule of thumb: split when modules have *independent state*. Don't split when spl
 
 ---
 
-*Last updated: Post-Phase 10 refactor — main.ts split, mutable state pattern, circular dep via dynamic import.*
+---
+
+### 3.28 Flex header overflow: why one element must have `flex: 1`
+
+A flex row with `gap` and no `flex: 1` element is fragile when any child has dynamic width.
+
+The header is a flex row: `[title] [spinner] [regionBtn] [syncBtn] [themeBtn] [aboutBtn]`. When the user signs in, `syncBtn` gains a label (~80px). All flex items have `flex-shrink: 1, flex-grow: 0` (the default), meaning they resist growing but will try to shrink proportionally. If the total natural width exceeds the container, items shrink — but they don't go below their minimum content size. When they can't shrink further, they overflow the container and the page becomes horizontally scrollable.
+
+**The fix:**
+
+```css
+.header-mobile-title {
+  flex: 1;        /* grow to fill all remaining space */
+  min-width: 0;   /* allow shrinking below content size */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+```
+
+`flex: 1` is shorthand for `flex: 1 1 0%` — the title grows to fill available space. The buttons remain at their natural widths. `min-width: 0` overrides the browser default `min-width: auto` (which prevents flex items from shrinking below their content width). Without it, a long tab name would still overflow even with `flex: 1`.
+
+**The pattern:** Every flex row that contains both fixed-size elements (buttons) and variable-size content (titles, labels) should have exactly one element with `flex: 1; min-width: 0` to act as the flexible filler. Without it, adding or widening any fixed element will eventually overflow the container.
+
+---
+
+*Last updated: Post-Phase 10 — flex header overflow fix, version bump to v0.4.0.*
 *See [REFLECTION.md](REFLECTION.md) for personal lessons and growth notes.*

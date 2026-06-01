@@ -140,7 +140,7 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ UX: Desktop preview pane → centered modal popup (was: side panel); mobile bottom sheet unchanged
 - ✅ UX: Modal 2-column layout — portrait card image left, details right; adaptive width fits card name
 
-**Phase 10 — Cloud Sync (✅ Done — branch: `feature/cloud-sync`)**
+**Phase 10 — Cloud Sync (✅ Done — v0.4.0)**
 - ✅ Google OAuth 2.0 + PKCE — Sign in with Google, no `client_secret` in client code
 - ✅ Cloudflare Workers + D1 (SQLite) — serverless edge backend, free tier (~100k req/day)
 - ✅ Worker-issued JWT (30 days) — Google token used once for identity; app uses own JWT so session stays alive
@@ -156,6 +156,12 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ Sign out only clears local session — cloud data preserved; `sync-meta.json` reset so next sign-in shows dialog
 - ✅ Update check sequenced before login on Android — prevents 10MB card download racing with OAuth network calls
 - ✅ Auth retry with backoff — 3 attempts (0s → 2s → 6s) for Android WebView network cold start after OAuth
+
+**Post-Phase 10 Polish & Security (✅ Done)**
+- ✅ Fix: header horizontal overflow when sync button showed signed-in label — `flex: 1; min-width: 0` on header title elements
+- ✅ Fix: About dialog version was stuck at `v0.1.0` since Phase 1 launch — now correctly shows current version
+- ✅ Security: `GOOGLE_CLIENT_ID` moved from `wrangler.toml [vars]` to Cloudflare secret — no credentials in committed files
+- ✅ Version bump `0.3.0` → `0.4.0`
 
 **Post-Phase 10 Refactor (✅ Done)**
 - ✅ `main.ts` 624 → 223 lines — extracted 5 focused modules: `region.ts`, `card-loader.ts`, `sync-handlers.ts`, `startup.ts`, `collection-add-section.ts`

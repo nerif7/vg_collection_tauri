@@ -763,6 +763,26 @@ A good split has two properties: each piece has a clear name for what it does, a
 
 ---
 
+### Bug 22: Header became horizontally scrollable after signing in ✅ Fixed
+
+**What happened:** After completing Google Sign In, the sync button gained a label showing the user's name. The About (`?`) button was pushed outside the visible viewport, making the app horizontally scrollable.
+
+**Root cause:** The header is a `display: flex` row. All flex items had the default `flex-grow: 0` — no item was designated to absorb remaining space. When the sync button label added ~80px of width, the total natural width of all items exceeded the header width. Items try to shrink proportionally, but can't go below their content size (`min-width: auto`). The overflow pushed the last button out of view.
+
+**The fix:** Added `flex: 1; min-width: 0` to the header title elements. The title now absorbs all remaining space and truncates with ellipsis if needed. Buttons stay at their natural widths.
+
+**Lesson:** Any flex row with both fixed-size children (buttons) and a label/title needs exactly one `flex: 1; min-width: 0` element to act as the flexible filler. Without it, adding width to any fixed child will eventually cause overflow. The title is almost always the right candidate — it can truncate gracefully.
+
+---
+
+### Design Note: About dialog version number not included in version bump checklist
+
+The About dialog (`about-dialog.ts`) had `v0.1.0` hardcoded since Phase 1 and was never updated during three subsequent version bumps (v0.1.0 → v0.2.0 → v0.3.0). Caught during pre-merge audit at v0.4.0.
+
+**Lesson:** Any UI string that displays the app version must be included in the version bump checklist. In this project: `package.json`, `tauri.conf.json` (version field + window title), and `about-dialog.ts` — all four must be updated together.
+
+---
+
 ## Growth as a Developer
 
 **Before this project, I:**
@@ -790,6 +810,8 @@ A good split has two properties: each piece has a clear name for what it does, a
   without any native plugin
 - Know how to split a large orchestrator module without circular dependencies — mutable
   state object passed by reference; dynamic `import()` for the one unavoidable cycle
+- Understand Google OAuth 2.0 + PKCE for native apps — loopback redirect, server-issued JWT, when `client_id` is public by design
+- Have shipped a full cloud sync backend on Cloudflare Workers + D1 — no server maintenance, free tier, `wrangler deploy` in one command
 
 **What I'm still learning:**
 - Rust — currently enough to understand Tauri's backend but not enough to write Rust
