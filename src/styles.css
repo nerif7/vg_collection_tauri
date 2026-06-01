@@ -374,9 +374,22 @@
   .bottom-nav-icon { font-size: 1.3rem; line-height: 1; }
   .bottom-nav-label { font-weight: 500; }
 
-  /* Mobile bottom padding so content clears bottom nav */
-  .app {
-    padding-bottom: calc(var(--bottom-nav-h) + var(--safe-bottom) + 16px);
+  /* Mobile: lock the app to a fixed viewport container so the body never scrolls.
+     Body scrolling breaks env(safe-area-inset-bottom) on fixed elements in some
+     Android WebViews (specifically when Collection tab's tall toolbar causes overflow). */
+  @media (max-width: 767px) {
+    body {
+      overflow: hidden;
+      height: 100dvh;
+    }
+    .app {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      bottom: calc(var(--bottom-nav-h) + var(--safe-bottom));
+      overflow-y: auto;
+      overscroll-behavior-y: contain;
+      padding-bottom: 8px;
+    }
   }
   @media (min-width: 768px) {
     .app { padding-bottom: 40px; }
@@ -765,8 +778,9 @@
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 8px;
-    height: calc(100dvh - 260px);
-    min-height: 200px;
+    /* Collection tab has more toolbar rows than Browse/Wishlist — use a larger offset
+       so its content never causes the body to scroll (which breaks safe-area on Android) */
+    height: clamp(200px, calc(100dvh - 400px), 700px);
     overflow-y: auto;
     position: relative;
   }
