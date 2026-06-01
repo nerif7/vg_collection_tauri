@@ -29,6 +29,13 @@ async function saveSyncMeta(lastSyncedAt: number): Promise<void> {
   });
 }
 
+export async function clearSyncMeta(): Promise<void> {
+  try {
+    const dir = await invoke<string>("get_userdata_dir");
+    await invoke<void>("delete_file", { path: `${dir}/sync-meta.json` });
+  } catch { /* already gone */ }
+}
+
 // Baca mtime 3 file dari OS — tidak perlu tracking manual di collection-db.ts (Opsi B)
 async function getLocalModifiedAt(): Promise<number> {
   const dir = await invoke<string>("get_userdata_dir");
@@ -132,16 +139,20 @@ export function detectConflicts(
 let _syncInProgress = false;
 let _pendingSync    = false;
 let _authInProgress = false;
+// Set true after explicit sign-in so first sync shows the data-choice dialog
+let _justLoggedIn   = false;
 
 // Call this before/after signInWithGoogle so startup sync doesn't race with auth
 export function setAuthInProgress(val: boolean): void { _authInProgress = val; }
+// Call this after successful sign-in to trigger first-login dialog on next sync
+export function setJustLoggedIn(): void { _justLoggedIn = true; }
 
 export type SyncOutcome =
   | { status: "not_logged_in" }
   | { status: "up_to_date" }
   | { status: "pushed" }
   | { status: "pulled" }
-  | { status: "first_login"; localCount: number; remoteCount: number }
+  | { status: "first_login"; localCount: number; remoteCount: number; localCollection: CollectionEntry[]; remote: SyncPayload; serverTime: number }
   | { status: "conflict"; conflicts: ConflictEntry[]; remote: SyncPayload }
   | { status: "unauthorized" }
   | { status: "error"; message: string };
@@ -169,14 +180,25 @@ async function _performSync(): Promise<SyncOutcome> {
       fetchRemote(session.token),
     ]);
 
-    // Gap 1: first login — lastSyncedAt=0 dan ada data di keduanya
-    if (meta.lastSyncedAt === 0 && remote !== null) {
-      const localCollection = await getAllCollectionEntries();
-      return {
-        status:       "first_login",
-        localCount:   localCollection.length,
-        remoteCount:  (remote.collection as CollectionEntry[]).length,
-      };
+    // Gap 1: user baru sign-in secara eksplisit, ada data di cloud
+    if (_justLoggedIn) {
+      _justLoggedIn = false; // reset regardless of path below
+      if (remote !== null) {
+        const localCollection = await getAllCollectionEntries();
+        return {
+          status:          "first_login",
+          localCount:      localCollection.length,
+          remoteCount:     (remote.collection as CollectionEntry[]).length,
+          localCollection,
+          remote,
+          serverTime,
+        };
+      }
+      // Logged in but cloud empty → just push local silently
+      const localFirst = await buildLocalPayload();
+      const { serverTime: st } = await pushToRemote(session.token, localFirst);
+      await saveSyncMeta(st);
+      return { status: "pushed" };
     }
 
     // First sync dari device ini (belum ada data di cloud)
@@ -259,6 +281,97 @@ async function _savePreConflictBackup(): Promise<void> {
       content: JSON.stringify({ collection, wishlist, locations }, null, 2),
     });
   } catch { /* backup gagal tidak boleh block sync */ }
+}
+
+// ── First-login resolution (Gap 1) ───────────────────────────────────────────
+// Merge helpers — local wins for duplicates, remote-only entries are added
+
+function _mergeCollections(
+  local:  CollectionEntry[],
+  remote: CollectionEntry[]
+): CollectionEntry[] {
+  const localKeys = new Set(local.map((e) => `${e.cardCode}|${e.location}|${e.region}`));
+  const result    = [...local];
+  for (const e of remote) {
+    if (!localKeys.has(`${e.cardCode}|${e.location}|${e.region}`)) result.push(e);
+  }
+  return result;
+}
+
+function _mergeWishlists(
+  local:  import("./types.ts").WishlistEntry[],
+  remote: import("./types.ts").WishlistEntry[]
+): import("./types.ts").WishlistEntry[] {
+  const localKeys = new Set(local.map((e) => `${e.cardCode}|${e.region}`));
+  const result    = [...local];
+  for (const e of remote) {
+    if (!localKeys.has(`${e.cardCode}|${e.region}`)) result.push(e);
+  }
+  return result;
+}
+
+// Called from main.ts after user makes a choice in the first-login dialog
+export async function resolveFirstLogin(
+  choice:     "merge" | "use_cloud" | "keep_local" | "cancel",
+  remote:     SyncPayload,
+  token:      string,
+  serverTime: number
+): Promise<void> {
+  const dir = await invoke<string>("get_userdata_dir");
+
+  if (choice === "cancel") {
+    // Defer sync: save server timestamp as baseline so future syncs don't accidentally push
+    // stale local data. Neither local nor cloud data is modified.
+    await saveSyncMeta(serverTime);
+    return;
+  }
+
+  if (choice === "use_cloud") {
+    await applyRemotePayload(remote, serverTime);
+    return;
+  }
+
+  if (choice === "keep_local") {
+    const local = await buildLocalPayload();
+    const { serverTime: st } = await pushToRemote(token, local);
+    await saveSyncMeta(st);
+    return;
+  }
+
+  // "merge" — combine local + remote-only entries, push merged
+  const [localCollection, localWishlist, localLocations] = await Promise.all([
+    getAllCollectionEntries(),
+    getAllWishlistEntries(),
+    getAllLocations(),
+  ]);
+
+  const mergedCollection = _mergeCollections(
+    localCollection,
+    remote.collection as CollectionEntry[]
+  );
+  const mergedWishlist = _mergeWishlists(
+    localWishlist,
+    remote.wishlist as import("./types.ts").WishlistEntry[]
+  );
+  const mergedLocations = [
+    ...new Set([...localLocations, ...(remote.locations as string[])]),
+  ];
+
+  await Promise.all([
+    invoke("write_text_file", { path: `${dir}/collection.json`, content: JSON.stringify(mergedCollection, null, 2) }),
+    invoke("write_text_file", { path: `${dir}/wishlist.json`,   content: JSON.stringify(mergedWishlist,   null, 2) }),
+    invoke("write_text_file", { path: `${dir}/locations.json`,  content: JSON.stringify(mergedLocations,  null, 2) }),
+  ]);
+
+  const payload: SyncPayload = {
+    collection:       mergedCollection,
+    wishlist:         mergedWishlist,
+    locations:        mergedLocations,
+    last_modified_at: Date.now(),
+    schema_version:   1,
+  };
+  const { serverTime: st } = await pushToRemote(token, payload);
+  await saveSyncMeta(st);
 }
 
 // Dipanggil setelah user resolve conflict

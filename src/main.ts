@@ -37,9 +37,9 @@ import {
 } from "./browse-stats.ts";
 import { loadSettings, saveSettings } from "./settings.ts";
 import { showOnboarding } from "./onboarding.ts";
-import { runSync, scheduleDebounce } from "./sync.ts";
+import { runSync, scheduleDebounce, resolveFirstLogin } from "./sync.ts";
 import { loadSession } from "./auth.ts";
-import { initSyncButton, updateSyncTimestamp } from "./sync-menu.ts";
+import { initSyncButton, updateSyncTimestamp, flashSyncResult } from "./sync-menu.ts";
 import "./styles.css";
 
 // ── State ─────────────────────────────────────────────────────────────────────
@@ -383,7 +383,8 @@ export function handleSyncOutcome(result: Awaited<ReturnType<typeof runSync>>): 
 async function handleSyncResult(result: Awaited<ReturnType<typeof runSync>>): Promise<void> {
   switch (result.status) {
     case "pulled":
-      showToast("Collection updated from cloud", "success");
+      showToast("Collection updated from cloud ✓", "success");
+      flashSyncResult("✓");
       await Promise.all([
         loadCollectionTab(activeRegion, undefined, regionPreference),
         loadWishlistTab(activeRegion),
@@ -391,17 +392,20 @@ async function handleSyncResult(result: Awaited<ReturnType<typeof runSync>>): Pr
       ]);
       break;
     case "pushed":
+      showToast("Synced to cloud ✓", "success");
       updateSyncTimestamp();
+      flashSyncResult("✓");
       break;
     case "unauthorized":
       showToast("Sync session expired — please sign in again", "error");
+      flashSyncResult("⚠");
       break;
     case "error":
-      showToast(`Sync failed, working offline`, "error");
+      showToast("Sync failed, working offline", "error");
+      flashSyncResult("⚠");
       break;
     case "first_login":
-      // Gap 1: device baru login dengan data lokal yang sudah ada
-      await handleFirstLoginSync(result.localCount, result.remoteCount);
+      await handleFirstLoginSync(result.localCount, result.remoteCount, result.localCollection, result.remote, result.serverTime);
       break;
     case "conflict":
       // Phase 10d — placeholder untuk sekarang
@@ -411,38 +415,85 @@ async function handleSyncResult(result: Awaited<ReturnType<typeof runSync>>): Pr
   }
 }
 
-async function handleFirstLoginSync(localCount: number, remoteCount: number): Promise<void> {
+function _computeDiff(
+  local:   import("./types.ts").CollectionEntry[],
+  remote:  import("./types.ts").CollectionEntry[],
+  nameMap: Map<string, string>
+): import("./sync-dialog.ts").DiffSummary {
+  const localMap  = new Map<string, number>();
+  const remoteMap = new Map<string, number>();
+
+  for (const e of local) {
+    const k = `${e.cardCode}|${e.region}`;
+    localMap.set(k, (localMap.get(k) ?? 0) + e.quantity);
+  }
+  for (const e of remote) {
+    const k = `${e.cardCode}|${e.region}`;
+    remoteMap.set(k, (remoteMap.get(k) ?? 0) + (e.quantity || 1));
+  }
+
+  const onlyLocal: import("./sync-dialog.ts").DiffEntry[] = [];
+  const onlyCloud: import("./sync-dialog.ts").DiffEntry[] = [];
+  const diffQty:   import("./sync-dialog.ts").DiffEntry[] = [];
+
+  for (const [k, lQty] of localMap) {
+    const cardCode    = k.split("|")[0];
+    const rQty        = remoteMap.get(k) ?? 0;
+    const displayName = nameMap.get(cardCode) ?? cardCode;
+    if (rQty === 0)         onlyLocal.push({ cardCode, displayName, localQty: lQty, cloudQty: 0 });
+    else if (lQty !== rQty) diffQty.push({ cardCode, displayName, localQty: lQty, cloudQty: rQty });
+  }
+  for (const [k, rQty] of remoteMap) {
+    const cardCode = k.split("|")[0];
+    if (!localMap.has(k))
+      onlyCloud.push({ cardCode, displayName: nameMap.get(cardCode) ?? cardCode, localQty: 0, cloudQty: rQty });
+  }
+
+  return { onlyLocal, onlyCloud, diffQty };
+}
+
+async function handleFirstLoginSync(
+  localCount:      number,
+  remoteCount:     number,
+  localCollection: import("./types.ts").CollectionEntry[],
+  remote:          import("./types.ts").SyncPayload,
+  serverTime:      number
+): Promise<void> {
   const { showFirstLoginSyncDialog } = await import("./sync-dialog.ts");
   const session = await loadSession();
   if (!session) return;
 
-  showFirstLoginSyncDialog(localCount, remoteCount,
+  const nameMap = new Map(allCards.map((c) => [c.cardNo, c.displayName]));
+  const diff    = _computeDiff(localCollection, remote.collection as import("./types.ts").CollectionEntry[], nameMap);
+
+  showFirstLoginSyncDialog(localCount, remoteCount, diff,
     async (choice) => {
-      if (choice === "export_first") {
-        const { exportBackup: doExport } = await import("./export-import.ts");
-        await doExport();
-      }
-      if (choice === "use_cloud") {
-        const { data: remote } = await fetch(`${(await import("./auth.ts")).WORKER_URL}/sync`, {
-          headers: { Authorization: `Bearer ${session.token}` },
-        }).then((r) => r.json()) as { data: import("./types.ts").SyncPayload };
-        if (remote) {
-          const { invoke } = await import("@tauri-apps/api/core");
-          const dir = await invoke<string>("get_userdata_dir");
-          await Promise.all([
-            invoke("write_text_file", { path: `${dir}/collection.json`, content: JSON.stringify(remote.collection, null, 2) }),
-            invoke("write_text_file", { path: `${dir}/wishlist.json`,   content: JSON.stringify(remote.wishlist,   null, 2) }),
-            invoke("write_text_file", { path: `${dir}/locations.json`,  content: JSON.stringify(remote.locations,  null, 2) }),
-          ]);
-          await Promise.all([
-            loadCollectionTab(activeRegion, undefined, regionPreference),
-            loadWishlistTab(activeRegion),
-            refreshCollectionOverlay(),
-          ]);
-          showToast("Collection replaced with cloud data", "success");
+      try {
+        if (choice === "export_first") {
+          await exportBackup();
+          await resolveFirstLogin("use_cloud", remote, session.token, serverTime);
+          showToast("Backup disimpan, koleksi diganti dengan data cloud", "success");
+        } else if (choice === "use_cloud") {
+          await resolveFirstLogin("use_cloud", remote, session.token, serverTime);
+          showToast("Koleksi diperbarui dari cloud", "success");
+        } else if (choice === "merge") {
+          await resolveFirstLogin("merge", remote, session.token, serverTime);
+          showToast("Data lokal dan cloud digabungkan", "success");
+        } else if (choice === "keep_local") {
+          await resolveFirstLogin("keep_local", remote, session.token, serverTime);
+          showToast("Data lokal dikirim ke cloud", "success");
+        } else {
+          // "cancel" = tunda, simpan baseline tanpa sentuh data lokal maupun cloud
+          await resolveFirstLogin("cancel", remote, session.token, serverTime);
         }
+        await Promise.all([
+          loadCollectionTab(activeRegion, undefined, regionPreference),
+          loadWishlistTab(activeRegion),
+          refreshCollectionOverlay(),
+        ]);
+      } catch (err) {
+        showToast(`Sync failed: ${err instanceof Error ? err.message : String(err)}`, "error");
       }
-      // "merge" dan "cancel" → tidak perlu action, data lokal tetap
     }
   );
 }

@@ -1,11 +1,79 @@
 import type { ConflictEntry } from "./types.ts";
 import { trapFocus } from "./focus-trap.ts";
 
-export type FirstLoginChoice = "merge" | "use_cloud" | "export_first" | "cancel";
+export type FirstLoginChoice = "merge" | "use_cloud" | "export_first" | "keep_local" | "cancel";
+
+export interface DiffEntry {
+  cardCode:    string;
+  displayName: string;
+  localQty:    number;
+  cloudQty:    number;
+}
+
+export interface DiffSummary {
+  onlyLocal: DiffEntry[];
+  onlyCloud: DiffEntry[];
+  diffQty:   DiffEntry[];
+}
+
+const DETAIL_LIMIT = 5; // show card names if category has ≤ this many entries
+
+function _renderDiffSection(diff: DiffSummary): HTMLElement {
+  const wrap = document.createElement("div");
+  wrap.style.cssText = "margin:12px 0;padding:10px 12px;background:var(--surface-alt,var(--surface));border:1px solid var(--border);border-radius:8px;font-size:0.85em";
+
+  const total = diff.onlyLocal.length + diff.onlyCloud.length + diff.diffQty.length;
+
+  if (total === 0) {
+    const eq = document.createElement("div");
+    eq.style.cssText = "color:var(--text-muted);text-align:center;padding:4px 0";
+    eq.textContent = "✓ Isi koleksi identik — hanya metadata yang mungkin berbeda";
+    wrap.appendChild(eq);
+    return wrap;
+  }
+
+  const addCategory = (
+    label: string,
+    entries: DiffEntry[],
+    fmtRow: (e: DiffEntry) => string
+  ) => {
+    if (entries.length === 0) return;
+    const row = document.createElement("div");
+    row.style.cssText = "margin-bottom:6px";
+
+    const hdr = document.createElement("div");
+    hdr.style.cssText = "font-weight:600;margin-bottom:3px";
+    hdr.textContent = `${label}: ${entries.length.toLocaleString("id-ID")} kartu`;
+    row.appendChild(hdr);
+
+    if (entries.length <= DETAIL_LIMIT) {
+      for (const e of entries) {
+        const item = document.createElement("div");
+        item.style.cssText = "padding-left:12px;color:var(--text-muted)";
+        item.textContent = `• ${fmtRow(e)}`;
+        row.appendChild(item);
+      }
+    } else {
+      const more = document.createElement("div");
+      more.style.cssText = "padding-left:12px;color:var(--text-muted)";
+      more.textContent = `(terlalu banyak untuk ditampilkan)`;
+      row.appendChild(more);
+    }
+
+    wrap.appendChild(row);
+  };
+
+  addCategory("📱 Hanya di device ini",  diff.onlyLocal, (e) => `${e.displayName} ×${e.localQty}`);
+  addCategory("☁ Hanya di cloud",        diff.onlyCloud, (e) => `${e.displayName} ×${e.cloudQty}`);
+  addCategory("🔄 Qty berbeda",           diff.diffQty,   (e) => `${e.displayName}: device ×${e.localQty}, cloud ×${e.cloudQty}`);
+
+  return wrap;
+}
 
 export function showFirstLoginSyncDialog(
   localCount:  number,
   remoteCount: number,
+  diff:        DiffSummary,
   onChoice:    (choice: FirstLoginChoice) => void
 ): void {
   const backdrop = document.createElement("div");
@@ -27,8 +95,16 @@ export function showFirstLoginSyncDialog(
 
   const desc = document.createElement("p");
   desc.className = "confirm-msg";
-  desc.innerHTML = `Device ini punya <strong>${localCount}</strong> kartu lokal. Cloud punya <strong>${remoteCount}</strong> kartu.<br>Pilih cara menggabungkannya:`;
+  desc.innerHTML = `Device ini punya <strong>${localCount}</strong> kartu lokal. Cloud punya <strong>${remoteCount}</strong> kartu.`;
   box.appendChild(desc);
+
+  box.appendChild(_renderDiffSection(diff));
+
+  const subDesc = document.createElement("p");
+  subDesc.className = "confirm-msg";
+  subDesc.style.cssText = "margin-top:10px";
+  subDesc.textContent = "Pilih cara menggabungkannya:";
+  box.appendChild(subDesc);
 
   const close = () => backdrop.remove();
 
@@ -44,25 +120,30 @@ export function showFirstLoginSyncDialog(
 
   box.appendChild(makeOption(
     "Gabungkan",
-    "Tambahkan semua kartu lokal ke cloud (entri duplikat digabung).",
+    "Tambahkan kartu dari cloud yang belum ada di lokal. Data lokal tetap.",
     "merge"
   ));
   box.appendChild(makeOption(
     "Pakai data cloud",
-    "Ganti data lokal dengan data dari cloud. Data lokal akan hilang.",
+    "Ambil semua data dari cloud ke device ini. Data lokal akan diganti.",
     "use_cloud"
   ));
   box.appendChild(makeOption(
     "Ekspor lokal dulu, lalu pakai cloud",
-    "Simpan backup data lokal ke file, kemudian ganti dengan data cloud.",
+    "Backup data lokal ke file, kemudian ambil data cloud.",
     "export_first"
+  ));
+  box.appendChild(makeOption(
+    "⚠ Timpa cloud dengan data lokal",
+    "Kirim data device ini ke cloud. Data cloud (dari device lain) akan hilang.",
+    "keep_local"
   ));
 
   const cancelBtn = document.createElement("button");
   cancelBtn.type = "button";
   cancelBtn.className = "btn-neutral";
-  cancelBtn.style.cssText = "width:100%;margin-top:4px";
-  cancelBtn.textContent = "Batalkan (tetap pakai lokal)";
+  cancelBtn.style.cssText = "width:100%;margin-top:8px;opacity:0.7";
+  cancelBtn.textContent = "Tunda — putuskan nanti";
   cancelBtn.addEventListener("click", () => { close(); onChoice("cancel"); });
   box.appendChild(cancelBtn);
 

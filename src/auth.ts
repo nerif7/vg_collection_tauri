@@ -159,14 +159,6 @@ export async function signInWithGoogle(): Promise<AuthSession> {
 }
 
 export async function signOut(): Promise<void> {
-  const session = await loadSession();
-  if (session) {
-    try {
-      await fetch(`${WORKER_URL}/sync`, {
-        method:  "DELETE",
-        headers: { Authorization: `Bearer ${session.token}` },
-      });
-    } catch { /* network error saat logout — tetap hapus lokal */ }
-  }
+  // Only clears local session — cloud data is preserved so it's available on next sign-in
   await clearSession();
 }

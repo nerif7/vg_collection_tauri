@@ -1,11 +1,23 @@
 import { loadSession, signInWithGoogle, signOut } from "./auth.ts";
-import { runSync, setAuthInProgress } from "./sync.ts";
+import { runSync, setAuthInProgress, setJustLoggedIn, clearSyncMeta } from "./sync.ts";
 import { showToast } from "./toast.ts";
 import { trapFocus } from "./focus-trap.ts";
 
 export function updateSyncTimestamp(): void {
   const btn = document.getElementById("syncBtn") as HTMLButtonElement | null;
   if (btn) btn.title = `${btn.title.split(" — ")[0]} — synced just now`;
+}
+
+// Briefly flash an icon on the sync button to signal sync result
+export function flashSyncResult(icon: "✓" | "⚠"): void {
+  const btn = document.getElementById("syncBtn") as HTMLButtonElement | null;
+  if (!btn) return;
+  const prev = btn.innerHTML;
+  btn.innerHTML = icon;
+  setTimeout(() => {
+    btn.innerHTML = prev;
+    void refreshSyncBtnState();
+  }, 2000);
 }
 
 export function initSyncButton(): void {
@@ -78,6 +90,7 @@ async function openSyncMenu(anchor: HTMLButtonElement): Promise<void> {
         setAuthInProgress(true);
         showToast("Opening Google sign in…");
         const session = await signInWithGoogle();
+        setJustLoggedIn(); // trigger first-login dialog on next sync
         await refreshSyncBtnState();
         showToast(`Signed in as ${session.email}`, "success");
         // Beri UI waktu render sebelum mulai sync (cegah white/black flash)
@@ -115,6 +128,7 @@ async function openSyncMenu(anchor: HTMLButtonElement): Promise<void> {
     _appendMenuItem(menu, "Sign out", "btn-neutral sync-menu-signout", async () => {
       backdrop.remove();
       await signOut();
+      await clearSyncMeta(); // reset baseline so next sign-in shows data-choice dialog
       await refreshSyncBtnState();
       showToast("Signed out");
     });
