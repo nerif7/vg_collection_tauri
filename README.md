@@ -140,6 +140,23 @@ Eksperimental rewrite dari [tcg_library (Electron)](https://github.com/nerif7/tc
 - ✅ UX: Desktop preview pane → centered modal popup (was: side panel); mobile bottom sheet unchanged
 - ✅ UX: Modal 2-column layout — portrait card image left, details right; adaptive width fits card name
 
+**Phase 10 — Cloud Sync (✅ Done — branch: `feature/cloud-sync`)**
+- ✅ Google OAuth 2.0 + PKCE — Sign in with Google, no `client_secret` in client code
+- ✅ Cloudflare Workers + D1 (SQLite) — serverless edge backend, free tier (~100k req/day)
+- ✅ Worker-issued JWT (30 days) — Google token used once for identity; app uses own JWT so session stays alive
+- ✅ Loopback OAuth redirect (`http://127.0.0.1:PORT/callback`) — works on desktop AND Android without custom URI scheme
+- ✅ File-based OAuth callback fallback — writes `pending-oauth.txt` for Android background reliability
+- ✅ Startup sync — auto-pull when remote is newer; auto-push when local has uncommitted changes
+- ✅ Debounced push — 5s after last edit (maxWait 60s), silent background operation
+- ✅ First-login dialog — shows diff summary: cards only in local, only in cloud, qty differences per card
+- ✅ Per-entry conflict resolution dialog — choose local or cloud qty for each conflicting card; bulk "keep all local/cloud" option
+- ✅ Clock skew fix — `lastLocalAt` snapshot (local mtime at sync time) separate from server timestamp prevents false `localDirty`
+- ✅ Optimistic locking — PUT /sync with `expected_last_modified_at`; Worker returns 409 → client re-syncs
+- ✅ Sync feedback — toast + sync button flashes ✓/⚠ after push/pull/error
+- ✅ Sign out only clears local session — cloud data preserved; `sync-meta.json` reset so next sign-in shows dialog
+- ✅ Update check sequenced before login on Android — prevents 10MB card download racing with OAuth network calls
+- ✅ Auth retry with backoff — 3 attempts (0s → 2s → 6s) for Android WebView network cold start after OAuth
+
 **Phase 10+ — Future (📋 Maybe)**
 - 📋 Bulk edit: select multiple entries → change location or delete in bulk
 - 📋 Deck Builder: Vanguard deck validation + export
@@ -242,7 +259,17 @@ vg_collection_tauri/
 │   ├── swipe-dismiss.ts    # Swipe-to-dismiss utility for bottom sheet (mobile)
 │   ├── settings.ts         # Load/save region preference + active region to userdata/settings.json
 │   ├── onboarding.ts       # First-launch region selection dialog
+│   ├── auth.ts             # Google OAuth 2.0 PKCE flow, session storage (userdata/auth.json)
+│   ├── sync.ts             # Cloud sync orchestrator: push/pull/debounce/conflict detection
+│   ├── sync-menu.ts        # Sync button UI + sign-in/sign-out dropdown menu
+│   ├── sync-dialog.ts      # First-login diff dialog + per-entry conflict resolution dialog
 │   └── styles.css          # Tailwind CSS v4 — design tokens, responsive layout, dark mode
+├── cloudflare-worker/      # Serverless backend (Cloudflare Workers + D1)
+│   ├── src/index.ts        # Hono router: POST /auth/google, GET/PUT/DELETE /sync
+│   ├── src/auth.ts         # Google token exchange + Worker-issued JWT
+│   ├── src/sync.ts         # D1 CRUD (upsertUser, getSyncData, putSyncData, deleteUserData)
+│   ├── schema.sql          # D1 SQLite schema (users + sync_data tables)
+│   └── wrangler.toml       # Cloudflare deployment config
 ├── src-tauri/              # Rust backend
 │   ├── src/
 │   ├── Cargo.toml
