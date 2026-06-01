@@ -46,7 +46,7 @@ export function showContextMenu(x: number, y: number, items: ContextMenuItem[]):
   }, 0);
 }
 
-export function closeContextMenu(): void {
+function closeContextMenu(): void {
   if (docCloseListener) {
     document.removeEventListener("click",      docCloseListener);
     document.removeEventListener("touchstart", docCloseListener);

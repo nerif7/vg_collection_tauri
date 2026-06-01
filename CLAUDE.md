@@ -385,7 +385,7 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 - ✅ Keyboard navigation: Esc closes all modals, Enter/Space activates mode options, Tab cycles within dialog
 - ✅ `img.decoding="async"` on all card images (preview panes, grid tiles) — decode non-blocking
 - ✅ Grouped view memo: skip full DOM re-render when entries+selected+collapsed unchanged
-- ✅ Version bump: `0.1.0` → `0.2.0` in `tauri.conf.json`, `package.json`, window title
+- ✅ Version bump: `0.1.0` → `0.2.0` in `tauri.conf.json`, `package.json`, window title, `about-dialog.ts`
 
 ### Post-Phase 6 Fixes
 
@@ -429,9 +429,9 @@ Implementation: `src/toast.ts` extracted as shared module; `showToast(msg, "erro
 - ✅ UX: Modal layout 2-column (image portrait left, card details right); image uses `aspect-ratio: 5/7`
 - ✅ UX: Modal width adaptive (`fit-content` + `minmax(240px, max-content)` right column) — shrinks for short card names, expands for long ones; cap 740px
 
-### Phase 10 — Cloud Sync (Planned, not yet implemented)
+### Phase 10 — Cloud Sync (✅ Done — v0.4.0)
 
-**Branch**: `feature/cloud-sync` (dibuat saat implementasi dimulai)
+**Branch**: `feature/cloud-sync` → merged to `main`
 
 **Tujuan**: Sync otomatis collection + wishlist + locations antar device (PC ↔ Android) tanpa user harus update dua kali.
 
@@ -562,7 +562,7 @@ Per-entry: "local added only" dan "remote added only" → auto-merge tanpa tanya
 
 ### Current Status
 
-App is stable at v0.3.0. Android release APK signed and working. User is actively entering real collection data. Phase 10 (Cloud Sync) is planned and designed — implementation pending user request.
+App is stable at **v0.4.0**. Phase 10 (Cloud Sync) is complete and merged to `main`. Android release APK signed and working. User is actively entering real collection data and syncing between PC and Android via Google account.
 
 ---
 

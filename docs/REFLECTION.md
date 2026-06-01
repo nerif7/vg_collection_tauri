@@ -496,6 +496,120 @@ let content = String::from_utf8(bytes).map_err(|e| e.to_string())?;
 
 ---
 
+### Bug 17: `signOut()` silently deleted all cloud data ✅ Fixed
+
+**What happened:** After clicking Sign Out, then signing back in, the first-login dialog should appear with the diff between local and cloud data. Instead, it auto-pushed local data with no dialog — and the cloud collection (453 entries from PC) was gone.
+
+**Root cause:** `signOut()` made a `DELETE /sync` request to the Worker, which deleted the user's entire D1 row including all collection, wishlist, and location data:
+
+```typescript
+export async function signOut(): Promise<void> {
+  const session = await loadSession();
+  if (session) {
+    await fetch(`${WORKER_URL}/sync`, { method: "DELETE", headers: { ... } }); // ← deletes all cloud data!
+  }
+  await clearSession();
+}
+```
+
+When the user signed in again, the Worker returned `data: null` (no data for this user) → code went to "first push" path → silently pushed local (possibly empty) data to cloud → 453 PC entries lost.
+
+**The fix:** `signOut()` now only deletes the local session file (`auth.json`) and resets `sync-meta.json`. Cloud data is preserved. Users who want to erase cloud data will need an explicit "Delete account data" action.
+
+**Lesson:** "Sign out" means "forget who I am on this device" — not "delete everything." These are two completely different operations. Any destructive operation targeting server-side data needs an explicit confirmation UI, not a silent side effect of logout.
+
+---
+
+### Bug 18: CSS cascade ordering made mobile preview layout use desktop grid ✅ Fixed
+
+**What happened:** On Android, the card preview modal showed a 2-column desktop layout (portrait image left, card details right) instead of the single-column layout. The 2-column layout was wider than the phone screen, causing horizontal overflow.
+
+**Root cause:** The CSS had this ordering:
+```css
+/* ~line 971: INSIDE @media (max-width: 767px) */
+.preview-body { display: flex; flex-direction: column; }  /* mobile override */
+
+/* ~line 1033: OUTSIDE any media query (base styles) — comes LATER in the file */
+.preview-body { display: grid; grid-template-columns: 220px minmax(240px, max-content); }  /* desktop grid */
+```
+
+CSS cascade: when specificity is equal, **the last rule in the file wins**. The base grid styles appeared *after* the media query override in the file, so the grid always won — even on mobile.
+
+**The fix:** Adopted the correct mobile-first pattern:
+- Base (outside any media query) = flex column (mobile layout)  
+- `@media (min-width: 768px)` = 2-column grid override (desktop layout)
+
+**Lesson:** Mobile-first CSS means base styles are the mobile styles. Desktop overrides live inside `@media (min-width: ...)` blocks. Writing desktop styles first and trying to "undo" them inside `@media (max-width: ...)` blocks is fragile — the cascade ignores the ordering intention if any base styles appear later in the file.
+
+---
+
+### Bug 19: Bottom nav safe area broke on Collection tab but not Browse/Wishlist ✅ Fixed
+
+**What happened:** On Android, the bottom navigation bar (Collection | Wishlist | Browse) was positioned correctly on Browse and Wishlist tabs — above Android's system gesture area. But on the Collection tab, it overlapped with Android's system nav buttons.
+
+**Root cause:** The Collection tab has more toolbar content than Browse/Wishlist (stats bar + search + 5 action buttons that can wrap + 4 filter dropdowns + list meta). The `card-list-container` used `height: calc(100dvh - 260px)`, a hardcoded offset sized for Browse's shorter toolbar. On Collection, this made the card list taller than available space → page body became scrollable.
+
+When the page body is scrollable on some Android WebViews, `position: fixed` elements don't correctly receive `env(safe-area-inset-bottom)`. The bottom nav's `padding-bottom: var(--safe-bottom)` computed to `0` instead of `34px`, making it sit directly at the bottom of the screen and overlap Android's system nav.
+
+Browse and Wishlist were fine because their shorter toolbars didn't overflow the viewport.
+
+**The fix:** Two-part fix:
+1. On mobile, lock the body: `body { overflow: hidden; height: 100dvh }` + `.app { position: fixed; ... overflow-y: auto }` — page can never scroll, so safe area always applies correctly.
+2. Increased card list height offset from `260px` to `400px` to prevent overflow even on Collection's taller toolbar.
+
+**Lesson:** `env(safe-area-inset-bottom)` on `position: fixed` elements is reliable only when the page body is not scrollable. As soon as content overflows the viewport, some Android WebViews stop reporting the inset correctly. The fix is to prevent page body scroll entirely — use a fixed app container, scroll individual sections within it.
+
+---
+
+### Bug 20: False conflicts after sync — clock skew between device and server ✅ Fixed
+
+**What happened:** After a successful pull from cloud, the next manual sync on Android immediately showed "1 conflict detected" even though no changes had been made locally since the pull.
+
+**Root cause:** The dirty detection used server timestamps to compare against local file mtimes:
+```
+localDirty = localMtime > lastSyncedAt
+```
+
+`lastSyncedAt` was the Cloudflare server timestamp. If Android's device clock was even 2–3 seconds ahead of Cloudflare's clock:
+- Files were written at Android local time (e.g., `T + 2.5s`)
+- `lastSyncedAt` = server time (e.g., `T + 0s`)
+- Next check: `T+2.5 > T+1` → `localDirty = true` even with no changes → false conflict
+
+**The fix:** Added `lastLocalAt` to `sync-meta.json` — a snapshot of the actual local file mtime taken immediately after any sync operation. `localDirty` now compares against this local snapshot:
+```
+localDirty = localMtime > lastLocalAt  ← local vs local, no clock skew
+remoteDirty = remote.last_modified_at > lastSyncedAt  ← server vs server
+```
+
+Two different baselines for two different comparisons. Clock skew no longer affects either.
+
+**Lesson:** Mixing timestamp domains (server clock vs device clock) in comparisons is a subtle bug. Server timestamps are authoritative for "has the server changed?" Local timestamps are authoritative for "has my local file changed?" Never mix them in the same comparison.
+
+---
+
+### Bug 21: First OAuth attempt on Android always failed (network cold start) ✅ Fixed
+
+**What happened:** After completing Google login in Chrome and returning to the app, `signInWithGoogle()` always failed with "Connection failed" on the first attempt. A second manual retry usually succeeded.
+
+**Root cause:** When an Android app returns from background (Chrome → app), the WebView's network stack needs time to wake up. DNS resolution, TLS handshakes, and TCP connections are "cold" after background sleep. The first `fetch()` to the Cloudflare Worker hit this cold period and timed out.
+
+The original code had one retry after 1.5 seconds — not long enough for the network stack to fully initialize.
+
+**The fix:** Changed to 3 attempts with increasing backoff: immediate → 2s → 6s:
+```typescript
+const retryDelays = [2_000, 4_000];
+for (let i = 0; i <= retryDelays.length; i++) {
+  res = await fetch(...).catch(() => null);
+  if (res) break;
+  if (i < retryDelays.length)
+    await new Promise<void>(r => setTimeout(r, retryDelays[i]));
+}
+```
+
+**Lesson:** Android WebView network state after returning from background is unreliable for the first 1–5 seconds. Any network request that fires immediately after app foreground should have retries with sufficient backoff. One retry with 1.5s is almost always not enough — budget for 3+ attempts.
+
+---
+
 ## Process Insights
 
 ### The multi-question approach before implementing
@@ -639,6 +753,36 @@ layout.
 
 ---
 
+### Splitting a module is only worth it when state is independent
+
+During the refactor, I tried to split `collection-tab.ts` (415 lines) into smaller pieces. Every attempt made things worse: the split created a `deps` parameter with 8+ fields — more lines than the file saves by splitting. The file stayed.
+
+The lesson: file length is a symptom, not the problem. The real question is whether the code has *independent concerns with independent state*. When 10 functions all share the same 8 mutable variables, those functions form one cohesive unit — artificially separating them just relocates the coupling into a parameter list.
+
+A good split has two properties: each piece has a clear name for what it does, and each piece could be tested in isolation without dragging in the other's state.
+
+---
+
+### Bug 22: Header became horizontally scrollable after signing in ✅ Fixed
+
+**What happened:** After completing Google Sign In, the sync button gained a label showing the user's name. The About (`?`) button was pushed outside the visible viewport, making the app horizontally scrollable.
+
+**Root cause:** The header is a `display: flex` row. All flex items had the default `flex-grow: 0` — no item was designated to absorb remaining space. When the sync button label added ~80px of width, the total natural width of all items exceeded the header width. Items try to shrink proportionally, but can't go below their content size (`min-width: auto`). The overflow pushed the last button out of view.
+
+**The fix:** Added `flex: 1; min-width: 0` to the header title elements. The title now absorbs all remaining space and truncates with ellipsis if needed. Buttons stay at their natural widths.
+
+**Lesson:** Any flex row with both fixed-size children (buttons) and a label/title needs exactly one `flex: 1; min-width: 0` element to act as the flexible filler. Without it, adding width to any fixed child will eventually cause overflow. The title is almost always the right candidate — it can truncate gracefully.
+
+---
+
+### Design Note: About dialog version number not included in version bump checklist
+
+The About dialog (`about-dialog.ts`) had `v0.1.0` hardcoded since Phase 1 and was never updated during three subsequent version bumps (v0.1.0 → v0.2.0 → v0.3.0). Caught during pre-merge audit at v0.4.0.
+
+**Lesson:** Any UI string that displays the app version must be included in the version bump checklist. In this project: `package.json`, `tauri.conf.json` (version field + window title), and `about-dialog.ts` — all four must be updated together.
+
+---
+
 ## Growth as a Developer
 
 **Before this project, I:**
@@ -655,7 +799,7 @@ layout.
 - Use TypeScript generics naturally and understand when they add value
 - Understand the Tauri architecture (WebView + Rust process + IPC bridge) and how it
   differs from Electron (no bundled Chromium)
-- Have written ~2,500 lines of vanilla TypeScript without a framework and found it
+- Have written ~3,000 lines of vanilla TypeScript without a framework and found it
   readable and maintainable
 - Can build a full mobile-responsive layout with Tailwind CSS v4 — bottom nav, bottom
   sheet, safe area insets, dark mode — without any component framework
@@ -664,6 +808,10 @@ layout.
 - Know how Android system bars interact with WebView layout (viewport-fit, safe-area-inset)
 - Can intercept the Android back button via the History API (`pushState` / `popstate`)
   without any native plugin
+- Know how to split a large orchestrator module without circular dependencies — mutable
+  state object passed by reference; dynamic `import()` for the one unavoidable cycle
+- Understand Google OAuth 2.0 + PKCE for native apps — loopback redirect, server-issued JWT, when `client_id` is public by design
+- Have shipped a full cloud sync backend on Cloudflare Workers + D1 — no server maintenance, free tier, `wrangler deploy` in one command
 
 **What I'm still learning:**
 - Rust — currently enough to understand Tauri's backend but not enough to write Rust

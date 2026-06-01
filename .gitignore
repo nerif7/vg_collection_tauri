@@ -12,6 +12,11 @@ dist
 dist-ssr
 *.local
 
+# Environment variables (contains real credentials — use .env.example as template)
+.env
+.env.local
+.env.*.local
+
 # Android signing keystore (keep private)
 *.jks
 *.keystore
@@ -30,3 +35,13 @@ VGCollection-*.apk
 *.sln
 *.sw?
 .understand-anything
+
+# Cloud sync — auth & meta (private, per-device)
+userdata/auth.json
+userdata/sync-meta.json
+userdata/backups/
+
+# Cloudflare Worker
+cloudflare-worker/node_modules/
+cloudflare-worker/.dev.vars
+cloudflare-worker/.wrangler/

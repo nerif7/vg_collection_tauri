@@ -1,0 +1,79 @@
+import { Hono } from "hono";
+import { cors } from "hono/cors";
+import type { Env, SyncPayload } from "./types.ts";
+import { verifyGoogleToken, issueJwt, authMiddleware } from "./auth.ts";
+import { upsertUser, getSyncData, putSyncData, deleteUserData } from "./sync.ts";
+
+const app = new Hono<{ Bindings: Env }>();
+
+app.use("*", cors({ origin: "*" }));
+
+app.post("/auth/google", async (c) => {
+  const body = await c.req.json<{ code: string; codeVerifier: string; redirectUri: string }>();
+
+  if (!body.code || !body.codeVerifier || !body.redirectUri) {
+    return c.json({ error: "Missing code, codeVerifier, or redirectUri" }, 400);
+  }
+
+  try {
+    const { sub, email } = await verifyGoogleToken(
+      body.code,
+      body.codeVerifier,
+      c.env.GOOGLE_CLIENT_ID,
+      c.env.GOOGLE_CLIENT_SECRET,
+      body.redirectUri
+    );
+
+    await upsertUser(c.env.DB, sub, email);
+    const token = await issueJwt(sub, email, c.env.WORKER_SECRET);
+
+    return c.json({ token, email, serverTime: Date.now() });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("Auth error:", msg);
+    return c.json({ error: "Authentication failed", detail: msg }, 401);
+  }
+});
+
+app.get("/sync", async (c) => {
+  const user = await authMiddleware(c.req.raw, c.env.WORKER_SECRET);
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+  const data = await getSyncData(c.env.DB, user.sub);
+  return c.json({ data, serverTime: Date.now() });
+});
+
+app.put("/sync", async (c) => {
+  const user = await authMiddleware(c.req.raw, c.env.WORKER_SECRET);
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+  const payload = await c.req.json<SyncPayload & { expected_last_modified_at?: number }>();
+
+  if (
+    !Array.isArray(payload.collection) ||
+    !Array.isArray(payload.wishlist) ||
+    !Array.isArray(payload.locations)
+  ) {
+    return c.json({ error: "Invalid payload structure" }, 400);
+  }
+
+  if (payload.expected_last_modified_at !== undefined) {
+    const current = await getSyncData(c.env.DB, user.sub);
+    if (current && current.last_modified_at !== payload.expected_last_modified_at) {
+      return c.json({ error: "Conflict", serverTime: Date.now() }, 409);
+    }
+  }
+
+  await putSyncData(c.env.DB, user.sub, payload);
+  return c.json({ ok: true, serverTime: Date.now() });
+});
+
+app.delete("/sync", async (c) => {
+  const user = await authMiddleware(c.req.raw, c.env.WORKER_SECRET);
+  if (!user) return c.json({ error: "Unauthorized" }, 401);
+
+  await deleteUserData(c.env.DB, user.sub);
+  return c.json({ ok: true });
+});
+
+export default app;

@@ -697,6 +697,95 @@ and show for 6 seconds (vs 3.5s for normal toasts), giving the user time to read
 
 ---
 
+### 3.14 Why Cloudflare Workers + D1 over a traditional backend?
+
+The cloud sync feature (Phase 10) needed a backend. Evaluated options:
+
+| Option | Cost | Maintenance | Cold start |
+|---|---|---|---|
+| AWS Lambda + RDS | ~$5–15/month | High (VPC, IAM, certs) | ~500ms |
+| Heroku / Render | ~$7/month | Medium | ~1s (free tier) |
+| VPS (DigitalOcean) | ~$6/month | High (OS, nginx, updates) | — |
+| **Cloudflare Workers + D1** | **Free** (100k req/day) | **Zero** | **<10ms** |
+
+**Cloudflare Workers wins on every dimension for this use case:**
+- Free tier: 100k requests/day. 50 users × 10 syncs/day = 500 req/day — limit is 200× headroom.
+- D1 is SQLite at the edge — same SQL queries, no connection pooling complexity.
+- No server to maintain: no OS patches, no SSL renewal, no nginx config.
+- Edge network: requests served from the nearest Cloudflare datacenter, not a single region.
+- `wrangler deploy` — one command to deploy. No Docker, no CI pipeline needed.
+
+**The trade-off:** D1 is still a beta product. For a personal tool used by ~5 people, this is acceptable risk. If Cloudflare deprecates it, migrating to any SQL database would require minimal schema changes.
+
+---
+
+### 3.15 Why server-issued JWT, not the Google token directly?
+
+When the user signs in with Google, we receive a Google ID token (valid 1 hour). Two options:
+
+**Option A — Use Google token directly:** Store it, send it with every API request. Worker verifies with Google's public keys.
+- Problem: expires in 1 hour → user must re-authenticate every hour. Unacceptable UX.
+- "Silent refresh" (offline access + refresh token) is complex for native apps.
+
+**Option B — Exchange for a Worker-issued JWT (chosen):**
+1. Client sends Google code + PKCE verifier to Worker.
+2. Worker exchanges with Google → receives Google token → verifies identity.
+3. Worker issues **its own** JWT (HMAC-SHA256), valid **30 days**.
+4. Client stores this JWT; Google is never contacted again.
+
+This is the standard pattern used by every production app with social login. The Google token is a one-time "proof of identity" — the app's own session token governs the session length.
+
+**Why JWT, not a session cookie?**
+Native apps (Tauri) don't have browser cookie storage. JWTs in a local file (`userdata/auth.json`) are the standard equivalent.
+
+---
+
+### 3.16 Why loopback redirect URI, not a custom URI scheme?
+
+OAuth requires a redirect URI to return the authorization code after login. Two options for native apps:
+
+**Option A — Custom URI scheme:** `vgcollection://auth/callback`
+- Register the scheme in AndroidManifest.xml and tauri.conf.json.
+- Problem: Google OAuth explicitly rejects custom URI schemes for desktop app clients since 2019, citing security concerns (any app can register the same scheme).
+- Error: `Error 400: redirect_uri_mismatch — "This app is trying to use an incorrect redirect_uri"`
+
+**Option B — Loopback HTTP redirect (chosen):** `http://127.0.0.1:PORT/callback`
+- Tauri Rust backend starts a temporary TCP listener on a random port.
+- Browser redirects to `http://127.0.0.1:PORT/callback?code=...` → Rust captures the code → emits Tauri event to frontend.
+- Google accepts loopback URIs for all native app types (it's in RFC 8252 — OAuth 2.0 for Native Apps).
+- Works on both desktop AND Android — Chrome on Android can reach the device's own loopback address.
+
+**Android reliability:** When the app returns from the browser, the WebView may have been killed by Android. A `pending-oauth.txt` file written by the Rust HTTP handler acts as a fallback. On `window.focus`, the JS polls this file and picks up the code even if the Tauri event was missed.
+
+---
+
+### 3.17 The clock skew problem and the `lastLocalAt` solution
+
+**The bug:** After a pull from cloud, the next sync would show a false "conflict" even though no changes were made locally.
+
+**Root cause:** The sync dirty detection worked like this:
+```
+localDirty = localMtime > lastSyncedAt
+```
+
+Where `lastSyncedAt` was the *server timestamp* from the last sync response. On Android, if the device clock was ahead of Cloudflare's clock by even a few seconds:
+- Files written at device time `T_device = 1748520000.500`
+- Server responded at `T_server = 1748519998.000` (device is 2.5s ahead)
+- `lastSyncedAt = T_server + 1 = 1748519999.001`
+- Next check: `localMtime (1748520000.500) > lastSyncedAt (1748519999.001)` → **true** → false dirty!
+
+**The fix:** Track two separate values in `sync-meta.json`:
+```json
+{ "lastSyncedAt": 1748519998000, "lastLocalAt": 1748520000500 }
+```
+
+- `lastSyncedAt` = server timestamp → used only to check if *remote* has changed (`remoteDirty`)
+- `lastLocalAt` = actual local file mtime at sync time → used to check if *local* has changed (`localDirty`)
+
+After a pull, we read the actual mtime of the written files and save that as `lastLocalAt`. After a push, we snapshot `localMtime` (already computed at sync start) as `lastLocalAt`. Clock skew no longer affects dirty detection because we're comparing local timestamps only against each other.
+
+---
+
 ## 4. Deep Dives
 
 ### 4.1 IndexedDB: How It Really Works
@@ -1710,5 +1799,72 @@ No JS changes needed — pure CSS grid assigns image to column 1, all siblings t
 
 ---
 
-*Last updated: Post-Phase 9 — desktop preview → modal popup, 2-column layout, adaptive width.*
+---
+
+### 3.27 Splitting a 600-line orchestrator without circular dependencies
+
+`main.ts` reached 624 lines because it was the only module that knew about all shared state (`allCards`, `activeRegion`, `collectionQtyMap`, etc.). Splitting it naively creates circular imports: `startup.ts` needs to mutate state, but state lives in `main.ts`.
+
+**Solution: mutable state object pattern.**
+
+Declare one `AppState` object in `main.ts` and pass it by reference to extracted modules:
+
+```typescript
+// main.ts
+const state: AppState = { allEnCards: [], allCards: [], activeRegion: "EN", ... };
+await runStartup(state, callbacks);  // startup.ts mutates state directly
+```
+
+JS objects are passed by reference. When `startup.ts` does `state.allCards = [...newCards]`, `main.ts` sees the updated value — no return values, no setter functions, no event bus.
+
+Each extracted module declares its own minimal interface that matches the subset of `AppState` it needs. TypeScript structural typing (`{ allCards: Card[] }` is assignable to a type that requires `allCards: Card[]`) means the full `AppState` object satisfies any narrower interface automatically.
+
+**The one unavoidable circular dep: `sync-menu.ts` → `main.ts`.**
+
+`sync-menu.ts` calls `handleSyncOutcome` after Google Sign In completes. `handleSyncOutcome` lives in `main.ts` because it needs `syncDeps` which captures `state`. Making `sync-menu.ts` import `main.ts` statically would create a load-time circular dep (both modules import each other at the top level).
+
+Fix: dynamic import in `sync-menu.ts`:
+
+```typescript
+const { handleSyncOutcome } = await import("./main.ts");
+handleSyncOutcome(await runSync());
+```
+
+`await import()` defers the import until the function is called — by then both modules are fully initialized. Vite warns "module will not move into another chunk" but this is a chunking advisory, not a runtime error. The pattern is sound.
+
+**When to accept a large file instead of splitting.**
+
+`collection-tab.ts` was assessed at 415 lines and kept as-is. It has 10 functions that all share the same 8 module-level state variables (`allEntries`, `visibleEntries`, `cardMap`, `selectedId`, `virtualList`, `virtualGrid`, `viewMode`, `collapsedGroups`). Any split would require a `deps` object with 8+ fields — more boilerplate than the file's current length warrants. The file boundary stays; the functions stay cohesive.
+
+Rule of thumb: split when modules have *independent state*. Don't split when splitting just relocates shared mutable state into a larger parameter list.
+
+---
+
+---
+
+### 3.28 Flex header overflow: why one element must have `flex: 1`
+
+A flex row with `gap` and no `flex: 1` element is fragile when any child has dynamic width.
+
+The header is a flex row: `[title] [spinner] [regionBtn] [syncBtn] [themeBtn] [aboutBtn]`. When the user signs in, `syncBtn` gains a label (~80px). All flex items have `flex-shrink: 1, flex-grow: 0` (the default), meaning they resist growing but will try to shrink proportionally. If the total natural width exceeds the container, items shrink — but they don't go below their minimum content size. When they can't shrink further, they overflow the container and the page becomes horizontally scrollable.
+
+**The fix:**
+
+```css
+.header-mobile-title {
+  flex: 1;        /* grow to fill all remaining space */
+  min-width: 0;   /* allow shrinking below content size */
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+```
+
+`flex: 1` is shorthand for `flex: 1 1 0%` — the title grows to fill available space. The buttons remain at their natural widths. `min-width: 0` overrides the browser default `min-width: auto` (which prevents flex items from shrinking below their content width). Without it, a long tab name would still overflow even with `flex: 1`.
+
+**The pattern:** Every flex row that contains both fixed-size elements (buttons) and variable-size content (titles, labels) should have exactly one element with `flex: 1; min-width: 0` to act as the flexible filler. Without it, adding or widening any fixed element will eventually overflow the container.
+
+---
+
+*Last updated: Post-Phase 10 — flex header overflow fix, version bump to v0.4.0.*
 *See [REFLECTION.md](REFLECTION.md) for personal lessons and growth notes.*

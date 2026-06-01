@@ -125,12 +125,90 @@
     font-size: 1.05rem;
     font-weight: 600;
     color: var(--text);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .header-app-title { display: none; }
   @media (min-width: 768px) {
     .header-mobile-title { display: none; }
-    .header-app-title    { display: block; }
+    .header-app-title    { display: block; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   }
+
+  .sync-btn-placeholder {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    padding: 4px 6px;
+    opacity: 0.5;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 0.3; }
+    50%       { opacity: 0.7; }
+  }
+
+  .sync-btn {
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+  }
+  .sync-btn--signed-in {
+    color: var(--green, #22c55e);
+    border-color: var(--green, #22c55e);
+  }
+  .sync-btn-label {
+    font-size: 0.78rem;
+    max-width: 80px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  @media (hover: hover) {
+    .sync-btn:hover { background: var(--bg-muted); color: var(--text); }
+  }
+
+  .sync-menu {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 8px;
+    min-width: 220px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.18);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .sync-menu-email {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    padding: 4px 10px 8px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2px;
+    word-break: break-all;
+  }
+  .sync-menu-item {
+    width: 100%;
+    text-align: left;
+    border-radius: 6px;
+    padding: 8px 10px;
+    font-size: 0.88rem;
+    cursor: pointer;
+    background: none;
+    border: none;
+    color: var(--text);
+  }
+  @media (hover: hover) {
+    .sync-menu-item:hover { background: var(--bg-muted); }
+  }
+  .sync-menu-signout { color: var(--red) !important; }
 
   .about-btn {
     margin-left: auto;
@@ -223,6 +301,11 @@
     color: var(--red);
     background: color-mix(in srgb, var(--red) 10%, var(--bg-card));
   }
+  .toast--success {
+    border-color: var(--green, #22c55e);
+    color: var(--green, #22c55e);
+    background: color-mix(in srgb, var(--green, #22c55e) 10%, var(--bg-card));
+  }
 
   /* ── Tab navigation (desktop top bar) ── */
   .tab-nav {
@@ -296,9 +379,22 @@
   .bottom-nav-icon { font-size: 1.3rem; line-height: 1; }
   .bottom-nav-label { font-weight: 500; }
 
-  /* Mobile bottom padding so content clears bottom nav */
-  .app {
-    padding-bottom: calc(var(--bottom-nav-h) + var(--safe-bottom) + 16px);
+  /* Mobile: lock the app to a fixed viewport container so the body never scrolls.
+     Body scrolling breaks env(safe-area-inset-bottom) on fixed elements in some
+     Android WebViews (specifically when Collection tab's tall toolbar causes overflow). */
+  @media (max-width: 767px) {
+    body {
+      overflow: hidden;
+      height: 100dvh;
+    }
+    .app {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      bottom: calc(var(--bottom-nav-h) + var(--safe-bottom));
+      overflow-y: auto;
+      overscroll-behavior-y: contain;
+      padding-bottom: 8px;
+    }
   }
   @media (min-width: 768px) {
     .app { padding-bottom: 40px; }
@@ -607,7 +703,6 @@
   }
 
   /* ── Browse tab unavailable ── */
-  .tab-btn--unavailable { opacity: 0.4; cursor: default; }
   .browse-unavailable {
     padding: 48px 24px;
     text-align: center;
@@ -687,8 +782,9 @@
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 8px;
-    height: calc(100dvh - 260px);
-    min-height: 200px;
+    /* Collection tab has more toolbar rows than Browse/Wishlist — use a larger offset
+       so its content never causes the body to scroll (which breaks safe-area on Android) */
+    height: clamp(200px, calc(100dvh - 400px), 700px);
     overflow-y: auto;
     position: relative;
   }
@@ -890,24 +986,8 @@
       transform: none !important;
       transition: none !important;
     }
-    .preview-body {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      padding: 12px;
-    }
-    .preview-body > *:not(.preview-image-wrap) {
-      grid-column: unset;
-    }
-    .preview-image-wrap {
-      grid-column: unset;
-      grid-row: unset;
-      width: auto;
-      max-width: 100%;
-      height: clamp(160px, 35vh, 280px);
-      aspect-ratio: 5 / 7;
-      margin: 0 auto;
-    }
+    /* preview-body + preview-image-wrap mobile styles are defined as the base below
+       (mobile-first) to avoid cascade ordering issues with the desktop grid override */
 
     /* Backdrop */
     .preview-pane.is-open::before {
@@ -952,27 +1032,45 @@
     letter-spacing: 0.06em;
   }
 
+  /* Mobile-first: single column */
   .preview-body {
-    padding: 16px;
-    display: grid;
-    grid-template-columns: 220px minmax(240px, max-content);
-    gap: 12px 20px;
-    align-items: start;
-  }
-  .preview-body > *:not(.preview-image-wrap) {
-    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
   }
 
   .preview-image-wrap {
-    grid-column: 1;
-    grid-row: 1 / span 3;
-    width: 100%;
-    height: auto;
+    width: auto;
+    max-width: 100%;
+    height: clamp(160px, 35vh, 280px);
     aspect-ratio: 5 / 7;
     border-radius: 5px; overflow: hidden;
     background: var(--bg-muted);
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0; cursor: pointer;
+    margin: 0 auto;
+  }
+
+  /* Desktop: 2-column grid (image left, details right) */
+  @media (min-width: 768px) {
+    .preview-body {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 220px minmax(240px, max-content);
+      gap: 12px 20px;
+      align-items: start;
+    }
+    .preview-body > *:not(.preview-image-wrap) {
+      grid-column: 2;
+    }
+    .preview-image-wrap {
+      grid-column: 1;
+      grid-row: 1 / span 3;
+      width: 100%;
+      height: auto;
+      margin: 0;
+    }
   }
   @media (hover: hover) {
     .preview-image-wrap:hover .preview-image { opacity: 0.88; }
@@ -1190,18 +1288,41 @@
   .location-new-input:focus { outline: none; border-color: var(--accent); }
   .location-list { list-style: none; margin: 0; padding: 0; }
   .location-list-item {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 10px 4px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 4px;
+    padding: 8px 4px; border-bottom: 1px solid var(--border);
     font-size: 0.88rem; color: var(--text); min-height: 44px;
   }
   .location-list-item:last-child { border-bottom: none; }
+  .location-name { flex: 1; }
+
+  .location-rename-input {
+    flex: 1; font-size: 0.88rem;
+    background: var(--bg-input, var(--bg-muted));
+    border: 1px solid var(--accent); border-radius: 5px;
+    padding: 4px 8px; color: var(--text);
+  }
+
+  .location-rename-btn {
+    background: none; border: none; cursor: pointer;
+    color: var(--text-muted); font-size: 0.85rem;
+    padding: 4px 6px; border-radius: 4px;
+    opacity: 0; transition: opacity 0.15s, color 0.15s;
+    min-height: 32px;
+  }
+  @media (hover: hover) {
+    .location-list-item:hover .location-rename-btn { opacity: 1; }
+    .location-rename-btn:hover { color: var(--accent); }
+  }
+  @media (hover: none) {
+    .location-rename-btn { opacity: 1; }
+  }
 
   .location-delete-btn {
     background: none; border: none; cursor: pointer;
     color: var(--text-muted); font-size: 1rem;
-    line-height: 1; padding: 4px 8px; border-radius: 4px;
+    line-height: 1; padding: 4px 6px; border-radius: 4px;
     opacity: 0; transition: opacity 0.15s, color 0.15s;
-    min-height: 36px; min-width: 36px;
+    min-height: 32px; min-width: 32px;
   }
   @media (hover: hover) {
     .location-list-item:hover .location-delete-btn { opacity: 1; }

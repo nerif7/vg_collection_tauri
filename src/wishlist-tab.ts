@@ -40,10 +40,12 @@ let typeFilterEl:  HTMLSelectElement;
 let viewToggleBtn: HTMLButtonElement;
 
 let statsBody: HTMLElement | null = null;
+let _onChange: (() => void) | undefined;
 
 // ── Init ───────────────────────────────────────────────────────────────────────
 
-export function initWishlistTab(cards: Card[]): void {
+export function initWishlistTab(cards: Card[], onChange?: () => void): void {
+  _onChange = onChange;
   cardMap = new Map(cards.map((c) => [c.cardNo, c]));
 
   statsBody = createStatsCollapsible(statsEl);
@@ -121,10 +123,8 @@ export async function loadWishlistTab(region?: "EN" | "JP", cards?: Card[]): Pro
 
   if (viewMode === "list") virtualList?.setSkeleton(6);
 
-  const t0 = performance.now();
   const rawEntries = await getAllWishlistEntries();
   allEntries = rawEntries.filter((e) => (e.region ?? "EN") === _currentRegion);
-  console.debug(`[perf] wishlist DB load: ${(performance.now() - t0).toFixed(1)} ms (${allEntries.length} entries)`);
 
   populateWishlistFilters();
   applyFilters();
@@ -279,12 +279,7 @@ async function renderPreview(entry: WishlistEntry): Promise<void> {
     else virtualGrid?.setItems(visibleEntries);
     renderStats();
     closePreview();
+    _onChange?.();
   });
   previewBody.appendChild(removeBtn);
-}
-
-// ── Public refresh (called after wishlist changes from Browse tab) ─────────────
-
-export async function refreshWishlistTab(): Promise<void> {
-  await loadWishlistTab();
 }

@@ -81,6 +81,10 @@ async function saveLocationsFile(locations: string[]): Promise<void> {
   await saveJsonFile("locations.json", locations);
 }
 
+export async function replaceAllLocations(locations: string[]): Promise<void> {
+  await saveLocationsFile([...new Set(locations)].sort());
+}
+
 // ── ID generation ─────────────────────────────────────────────────────────────
 
 function nextId(entries: CollectionEntry[]): number {
@@ -249,4 +253,24 @@ export async function addLocation(name: string): Promise<void> {
 export async function removeLocation(name: string): Promise<void> {
   const locations = await loadLocationsFile();
   await saveLocationsFile(locations.filter((l) => l !== name));
+}
+
+export async function renameLocation(oldName: string, newName: string): Promise<void> {
+  const trimmed = newName.trim();
+  if (!trimmed || trimmed === oldName) return;
+
+  // Update locations list
+  const locations = await loadLocationsFile();
+  const idx = locations.indexOf(oldName);
+  if (idx !== -1) locations[idx] = trimmed;
+  else locations.push(trimmed);
+  await saveLocationsFile([...new Set(locations)]);
+
+  // Update all collection entries that use the old location name
+  const entries = await loadCollectionFile();
+  let changed = false;
+  for (const e of entries) {
+    if (e.location === oldName) { e.location = trimmed; changed = true; }
+  }
+  if (changed) await saveCollectionFile(entries);
 }

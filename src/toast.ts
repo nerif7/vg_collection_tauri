@@ -1,6 +1,8 @@
-export function showToast(msg: string, kind?: "error"): void {
+export function showToast(msg: string, kind?: "error" | "success"): void {
   const toast = document.createElement("div");
-  toast.className = kind === "error" ? "toast toast--error" : "toast";
+  toast.className = kind === "error"   ? "toast toast--error"
+                  : kind === "success" ? "toast toast--success"
+                  : "toast";
   toast.textContent = msg;
   document.body.appendChild(toast);
   requestAnimationFrame(() => toast.classList.add("toast--visible"));

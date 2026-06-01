@@ -192,12 +192,10 @@ export async function loadCollectionTab(region?: "EN" | "JP", cards?: Card[], re
 
   if (viewMode === "list") virtualList?.setSkeleton(8);
 
-  const t0 = performance.now();
   const [entries, wishlist] = await Promise.all([
     getAllCollectionEntries(),
     getAllWishlistEntries(),
   ]);
-  console.debug(`[perf] collection DB load: ${(performance.now() - t0).toFixed(1)} ms (${entries.length} entries)`);
 
   allEntriesRaw  = entries;
   wishlistCountEN = wishlist.filter((w) => (w.region ?? "EN") === "EN").length;
@@ -205,10 +203,8 @@ export async function loadCollectionTab(region?: "EN" | "JP", cards?: Card[], re
   wishlistCount  = wishlist.filter((w) => (w.region ?? "EN") === _currentRegion).length;
   allEntries     = entries.filter((e) => (e.region ?? "EN") === _currentRegion);
 
-  const t1 = performance.now();
   populateCollectionFilters();
   applyFilters();
-  console.debug(`[perf] collection filter+render: ${(performance.now() - t1).toFixed(1)} ms`);
 
   renderStats();
 }

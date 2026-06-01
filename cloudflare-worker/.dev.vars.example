@@ -1,0 +1,11 @@
+# Copy file ini ke .dev.vars untuk local Worker development
+# .dev.vars tidak di-commit ke git
+
+# Harus sama dengan WORKER_SECRET yang di-upload via: wrangler secret put WORKER_SECRET
+WORKER_SECRET=your-random-secret-here
+
+# Google OAuth 2.0 Client ID
+GOOGLE_CLIENT_ID=YOUR_CLIENT_ID.apps.googleusercontent.com
+
+# Google OAuth 2.0 Client Secret (dari Google Cloud Console → Credentials → Desktop app)
+GOOGLE_CLIENT_SECRET=your_client_secret_here

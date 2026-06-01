@@ -24,7 +24,7 @@ export function showAboutDialog(): void {
 
   const version = document.createElement("div");
   version.className = "about-version";
-  version.textContent = "v0.1.0";
+  version.textContent = "v0.4.0";
 
   const author = document.createElement("div");
   author.className = "about-author";
