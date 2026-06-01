@@ -37,7 +37,7 @@ import {
 } from "./browse-stats.ts";
 import { loadSettings, saveSettings } from "./settings.ts";
 import { showOnboarding } from "./onboarding.ts";
-import { runSync, scheduleDebounce, resolveFirstLogin } from "./sync.ts";
+import { runSync, scheduleDebounce, resolveFirstLogin, resolveAndSync } from "./sync.ts";
 import { loadSession } from "./auth.ts";
 import { initSyncButton, updateSyncTimestamp, flashSyncResult } from "./sync-menu.ts";
 import "./styles.css";
@@ -413,10 +413,46 @@ async function handleSyncResult(result: Awaited<ReturnType<typeof runSync>>): Pr
     case "first_login":
       await handleFirstLoginSync(result.localCount, result.remoteCount, result.localCollection, result.remote, result.serverTime);
       break;
-    case "conflict":
-      // Phase 10d — placeholder untuk sekarang
-      showToast(`${result.conflicts.length} conflict(s) detected — resolve in next update`, "error");
+    case "conflict": {
+      const session = await loadSession();
+      if (!session) break;
+      const { showConflictDialog } = await import("./sync-dialog.ts");
+      const nameMap = new Map(allCards.map((c) => [c.cardNo, { displayName: c.displayName }]));
+      showConflictDialog(
+        result.conflicts,
+        nameMap,
+        async (choices) => {
+          try {
+            const localCollection = await (await import("./collection-db.ts")).getAllCollectionEntries();
+            const resolved = [...localCollection];
+            for (const conflict of result.conflicts) {
+              const key   = `${conflict.cardCode}|${conflict.region}`;
+              const choice = choices.get(key) ?? "local";
+              if (choice === "remote" && conflict.remote) {
+                const idx = resolved.findIndex(
+                  (e) => e.cardCode === conflict.cardCode &&
+                         e.location === conflict.remote!.location &&
+                         e.region   === conflict.region
+                );
+                if (idx !== -1) resolved[idx] = { ...resolved[idx], quantity: conflict.remote.quantity };
+              }
+            }
+            await resolveAndSync(session.token, resolved, result.remote);
+            showToast("Conflicts resolved ✓", "success");
+            flashSyncResult("✓");
+            await Promise.all([
+              loadCollectionTab(activeRegion, undefined, regionPreference),
+              loadWishlistTab(activeRegion),
+              refreshCollectionOverlay(),
+            ]);
+          } catch (err) {
+            showToast(`Sync failed: ${err instanceof Error ? err.message : String(err)}`, "error");
+          }
+        },
+        () => showToast("Sync cancelled — kept local data", "error")
+      );
       break;
+    }
     // "up_to_date", "not_logged_in" → silent
   }
 }

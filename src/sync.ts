@@ -402,8 +402,9 @@ export async function resolveAndSync(
     schema_version:   1,
   };
 
+  const localMtime = await getLocalModifiedAt();
   const { serverTime } = await pushToRemote(token, payload, remote.last_modified_at);
-  await saveSyncMeta(serverTime);
+  await saveSyncMeta(serverTime, localMtime);
 }
 
 // ── Debounce push (Gap 11: maxWait 60s) ──────────────────────────────────────
