@@ -125,11 +125,16 @@
     font-size: 1.05rem;
     font-weight: 600;
     color: var(--text);
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
   .header-app-title { display: none; }
   @media (min-width: 768px) {
     .header-mobile-title { display: none; }
-    .header-app-title    { display: block; }
+    .header-app-title    { display: block; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   }
 
   .sync-btn-placeholder {
