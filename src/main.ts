@@ -263,6 +263,9 @@ async function handleLoad() {
   try {
     setStartupProgress(15);
 
+    // Collected update tasks — run after tabs load (Android: awaited before login; Desktop: background)
+    const pendingUpdateTasks: (() => Promise<void>)[] = [];
+
     // ── Load EN ───────────────────────────────────────────────────────────
     if (regionPreference === "EN" || regionPreference === "BOTH") {
       const t0     = performance.now();
@@ -281,10 +284,7 @@ async function handleLoad() {
           renderStats({ count: allEnCards.length, sizeBytes: enMeta.sizeBytes, loadFromCacheMs: loadMs });
           renderCacheInfo(enMeta);
         }
-        // On Android delay auto-update — prevents GC pressure from simultaneous
-        // old+new 26MB card arrays during startup rendering
-        const enUpdateDelay = /Android/.test(navigator.userAgent) ? 20_000 : 0;
-        if (enMeta) setTimeout(() => checkForUpdatesEn(enMeta!).catch(() => {}), enUpdateDelay);
+        if (enMeta) pendingUpdateTasks.push(() => checkForUpdatesEn(enMeta!).catch(() => {}));
       } else {
         await doFetchAndCacheEn();
         setStartupProgress(70);
@@ -310,8 +310,7 @@ async function handleLoad() {
           renderStats({ count: allJpCards.length, sizeBytes: jpMeta.sizeBytes, loadFromCacheMs: loadMs });
           renderCacheInfo(jpMeta);
         }
-        const jpUpdateDelay = /Android/.test(navigator.userAgent) ? 20_000 : 0;
-        if (jpMeta) setTimeout(() => checkForUpdatesJp(jpMeta!).catch(() => {}), jpUpdateDelay);
+        if (jpMeta) pendingUpdateTasks.push(() => checkForUpdatesJp(jpMeta!).catch(() => {}));
       } else {
         await doFetchAndCacheJp();
         setStartupProgress(70);
@@ -345,10 +344,17 @@ async function handleLoad() {
     setStartupProgress(100);
     await yieldToUI();
 
-    // Init sync button only after startup — prevents login attempts during heavy load
-    initSyncButton();
+    // On Android: run update checks first so login doesn't race with 10MB card download.
+    // On desktop: login available immediately, update runs in background.
+    const isAndroid = /Android/.test(navigator.userAgent);
+    if (isAndroid && pendingUpdateTasks.length > 0) {
+      const timeout = new Promise<void>((r) => setTimeout(r, 30_000));
+      await Promise.race([Promise.all(pendingUpdateTasks.map((t) => t())), timeout]);
+    } else {
+      void Promise.all(pendingUpdateTasks.map((t) => t()));
+    }
 
-    // Sync is safe to start now — UI is fully rendered
+    initSyncButton();
     setTimeout(() => void runSync().then(handleSyncResult), 500);
 
   } catch (err) {

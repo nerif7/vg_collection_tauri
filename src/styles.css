@@ -968,24 +968,8 @@
       transform: none !important;
       transition: none !important;
     }
-    .preview-body {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-      padding: 12px;
-    }
-    .preview-body > *:not(.preview-image-wrap) {
-      grid-column: unset;
-    }
-    .preview-image-wrap {
-      grid-column: unset;
-      grid-row: unset;
-      width: auto;
-      max-width: 100%;
-      height: clamp(160px, 35vh, 280px);
-      aspect-ratio: 5 / 7;
-      margin: 0 auto;
-    }
+    /* preview-body + preview-image-wrap mobile styles are defined as the base below
+       (mobile-first) to avoid cascade ordering issues with the desktop grid override */
 
     /* Backdrop */
     .preview-pane.is-open::before {
@@ -1030,27 +1014,45 @@
     letter-spacing: 0.06em;
   }
 
+  /* Mobile-first: single column */
   .preview-body {
-    padding: 16px;
-    display: grid;
-    grid-template-columns: 220px minmax(240px, max-content);
-    gap: 12px 20px;
-    align-items: start;
-  }
-  .preview-body > *:not(.preview-image-wrap) {
-    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
   }
 
   .preview-image-wrap {
-    grid-column: 1;
-    grid-row: 1 / span 3;
-    width: 100%;
-    height: auto;
+    width: auto;
+    max-width: 100%;
+    height: clamp(160px, 35vh, 280px);
     aspect-ratio: 5 / 7;
     border-radius: 5px; overflow: hidden;
     background: var(--bg-muted);
     display: flex; align-items: center; justify-content: center;
     flex-shrink: 0; cursor: pointer;
+    margin: 0 auto;
+  }
+
+  /* Desktop: 2-column grid (image left, details right) */
+  @media (min-width: 768px) {
+    .preview-body {
+      padding: 16px;
+      display: grid;
+      grid-template-columns: 220px minmax(240px, max-content);
+      gap: 12px 20px;
+      align-items: start;
+    }
+    .preview-body > *:not(.preview-image-wrap) {
+      grid-column: 2;
+    }
+    .preview-image-wrap {
+      grid-column: 1;
+      grid-row: 1 / span 3;
+      width: 100%;
+      height: auto;
+      margin: 0;
+    }
   }
   @media (hover: hover) {
     .preview-image-wrap:hover .preview-image { opacity: 0.88; }

@@ -21,11 +21,14 @@ async function loadSyncMeta(): Promise<SyncMeta> {
   }
 }
 
-async function saveSyncMeta(lastSyncedAt: number): Promise<void> {
-  const dir = await invoke<string>("get_userdata_dir");
+// localMtime: snapshot of local file mtime at sync time; omit to auto-read current value.
+// Stored separately from server time to avoid clock-skew false-positives on localDirty.
+async function saveSyncMeta(lastSyncedAt: number, localMtime?: number): Promise<void> {
+  const dir       = await invoke<string>("get_userdata_dir");
+  const lastLocalAt = localMtime ?? await getLocalModifiedAt();
   await invoke<void>("write_text_file", {
     path:    `${dir}/sync-meta.json`,
-    content: JSON.stringify({ lastSyncedAt }, null, 2),
+    content: JSON.stringify({ lastSyncedAt, lastLocalAt }, null, 2),
   });
 }
 
@@ -102,8 +105,9 @@ async function applyRemotePayload(remote: SyncPayload, serverTime: number): Prom
     invoke("write_text_file", { path: `${dir}/wishlist.json`,   content: JSON.stringify(remote.wishlist,   null, 2) }),
     invoke("write_text_file", { path: `${dir}/locations.json`,  content: JSON.stringify(remote.locations,  null, 2) }),
   ]);
-  // Gap 6 fix: pakai server timestamp +1 agar lastSyncedAt selalu > mtime file yang baru ditulis
-  await saveSyncMeta(serverTime + 1);
+  // Read actual mtime AFTER writing so lastLocalAt reflects the true post-pull state
+  const localMtime = await getLocalModifiedAt();
+  await saveSyncMeta(serverTime + 1, localMtime);
 }
 
 // ── Conflict detection ────────────────────────────────────────────────────────
@@ -146,6 +150,7 @@ let _justLoggedIn   = false;
 export function setAuthInProgress(val: boolean): void { _authInProgress = val; }
 // Call this after successful sign-in to trigger first-login dialog on next sync
 export function setJustLoggedIn(): void { _justLoggedIn = true; }
+export function isAuthInProgress(): boolean { return _authInProgress; }
 
 export type SyncOutcome =
   | { status: "not_logged_in" }
@@ -197,7 +202,7 @@ async function _performSync(): Promise<SyncOutcome> {
       // Logged in but cloud empty → just push local silently
       const localFirst = await buildLocalPayload();
       const { serverTime: st } = await pushToRemote(session.token, localFirst);
-      await saveSyncMeta(st);
+      await saveSyncMeta(st, localModifiedAt);
       return { status: "pushed" };
     }
 
@@ -205,11 +210,12 @@ async function _performSync(): Promise<SyncOutcome> {
     if (remote === null) {
       const local = await buildLocalPayload();
       const { serverTime: st } = await pushToRemote(session.token, local);
-      await saveSyncMeta(st);
+      await saveSyncMeta(st, localModifiedAt);
       return { status: "pushed" };
     }
 
-    const localDirty  = localModifiedAt > meta.lastSyncedAt;
+    // localDirty uses lastLocalAt snapshot (avoids clock-skew vs server time)
+    const localDirty  = localModifiedAt > (meta.lastLocalAt ?? meta.lastSyncedAt);
     const remoteDirty = remote.last_modified_at > meta.lastSyncedAt;
 
     if (!localDirty && !remoteDirty) return { status: "up_to_date" };
@@ -219,7 +225,7 @@ async function _performSync(): Promise<SyncOutcome> {
       // Optimistic locking: kirim expected remote mtime (Gap 5)
       try {
         const { serverTime: st } = await pushToRemote(session.token, local, remote.last_modified_at);
-        await saveSyncMeta(st);
+        await saveSyncMeta(st, localModifiedAt);
       } catch (err) {
         if (err instanceof Error && err.message === "CONFLICT_RETRY") {
           // Remote berubah sejak kita fetch — jalankan ulang
@@ -244,7 +250,7 @@ async function _performSync(): Promise<SyncOutcome> {
       const local = await buildLocalPayload();
       try {
         const { serverTime: st } = await pushToRemote(session.token, local, remote.last_modified_at);
-        await saveSyncMeta(st);
+        await saveSyncMeta(st, localModifiedAt);
       } catch (err) {
         if (err instanceof Error && err.message === "CONFLICT_RETRY") {
           return await _performSync();
@@ -320,21 +326,20 @@ export async function resolveFirstLogin(
   const dir = await invoke<string>("get_userdata_dir");
 
   if (choice === "cancel") {
-    // Defer sync: save server timestamp as baseline so future syncs don't accidentally push
-    // stale local data. Neither local nor cloud data is modified.
     await saveSyncMeta(serverTime);
     return;
   }
 
   if (choice === "use_cloud") {
-    await applyRemotePayload(remote, serverTime);
+    await applyRemotePayload(remote, serverTime); // reads mtime after write internally
     return;
   }
 
   if (choice === "keep_local") {
+    const localMtime = await getLocalModifiedAt();
     const local = await buildLocalPayload();
     const { serverTime: st } = await pushToRemote(token, local);
-    await saveSyncMeta(st);
+    await saveSyncMeta(st, localMtime);
     return;
   }
 
@@ -363,6 +368,7 @@ export async function resolveFirstLogin(
     invoke("write_text_file", { path: `${dir}/locations.json`,  content: JSON.stringify(mergedLocations,  null, 2) }),
   ]);
 
+  const localMtime = await getLocalModifiedAt(); // read after write
   const payload: SyncPayload = {
     collection:       mergedCollection,
     wishlist:         mergedWishlist,
@@ -371,7 +377,7 @@ export async function resolveFirstLogin(
     schema_version:   1,
   };
   const { serverTime: st } = await pushToRemote(token, payload);
-  await saveSyncMeta(st);
+  await saveSyncMeta(st, localMtime);
 }
 
 // Dipanggil setelah user resolve conflict

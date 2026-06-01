@@ -136,7 +136,8 @@ export interface SyncPayload {
 }
 
 export interface SyncMeta {
-  lastSyncedAt: number;
+  lastSyncedAt: number;   // server timestamp — used to detect remoteDirty
+  lastLocalAt?:  number;  // local file mtime snapshot — used to detect localDirty
 }
 
 export interface ConflictEntry {

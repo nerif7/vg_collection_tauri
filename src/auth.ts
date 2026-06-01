@@ -128,19 +128,22 @@ export async function signInWithGoogle(): Promise<AuthSession> {
   const code   = parsed.searchParams.get("code");
   if (!code) throw new Error("No authorization code in callback URL");
 
-  // Retry once on fetch failure — first attempt may fail on Android cold start (DNS/TLS)
+  // Retry up to 3× with backoff — Android WebView network stack needs time to wake up
+  // after returning from the OAuth browser (DNS/TLS cold start)
   const exchangeBody = JSON.stringify({ code, codeVerifier, redirectUri });
-  let res = await fetch(`${WORKER_URL}/auth/google`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: exchangeBody,
-  }).catch(() => null);
+  const retryDelays = [2_000, 4_000]; // ms before attempt 2 and 3
+  let res: Response | null = null;
 
-  if (!res) {
-    await new Promise<void>((r) => setTimeout(r, 1500));
+  for (let i = 0; i <= retryDelays.length; i++) {
     res = await fetch(`${WORKER_URL}/auth/google`, {
       method: "POST", headers: { "Content-Type": "application/json" }, body: exchangeBody,
-    });
+    }).catch(() => null);
+    if (res) break;
+    if (i < retryDelays.length)
+      await new Promise<void>((r) => setTimeout(r, retryDelays[i]));
   }
 
+  if (!res) throw new Error("Connection failed — check your internet connection and try again");
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { detail?: string };
     throw new Error(`Worker auth failed: ${res.status} — ${body.detail ?? "unknown"}`);
