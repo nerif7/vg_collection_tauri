@@ -39,7 +39,6 @@ export async function clearSyncMeta(): Promise<void> {
   } catch { /* already gone */ }
 }
 
-// Baca mtime 3 file dari OS — tidak perlu tracking manual di collection-db.ts (Opsi B)
 async function getLocalModifiedAt(): Promise<number> {
   const dir = await invoke<string>("get_userdata_dir");
   const [c, w, l] = await Promise.all([
